@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Lumirion</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Theme variables ─────────────────────────────────────────────────── */
+    :root {
+      --bg:        #0d0d0d;
+      --bg2:       #111;
+      --bg3:       #1a1a1a;
+      --bg4:       #161616;
+      --border:    #1a1a1a;
+      --border2:   #1e1e1e;
+      --text:      #d0d0d0;
+      --text2:     #b0b0b0;
+      --text3:     #969696;
+      --text4:     #808080;
+      --text5:     #7a7a7a;
+      --text6:     #b0b0b0;
+      --lbl-color: #808080;
+      --unit-color:#808080;
+      --ok:        #00cc44;
+      --warn:      #e8a000;
+      --dead:      #cc2200;
+    }
+    html.light {
+      --bg:        #e8e8e8;
+      --bg2:       #d8d8d8;
+      --bg3:       #c8c8c8;
+      --bg4:       #d0d0d0;
+      --border:    #b0b0b0;
+      --border2:   #aaaaaa;
+      --text:      #111111;
+      --text2:     #333333;
+      --text3:     #555555;
+      --text4:     #444444;
+      --text5:     #4a4a4a;
+      --text6:     #5a5a5a;
+      --lbl-color: #666666;
+      --unit-color:#666666;
+      --ok:        #007722;
+      --warn:      #995500;
+      --dead:      #aa1100;
+    }
+
+    html, body {
+      width: 100vw; height: 100vh;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Courier New', monospace;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ────────────────────────────────────────────────────────── */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 14px;
+      height: 34px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .header-title { font-size: 0.7em; letter-spacing: 4px; color: var(--text3); text-transform: uppercase; }
+    .header-right  { display: flex; align-items: center; gap: 14px; }
+    .header-time  { font-size: 0.7em; color: var(--text4); }
+    a.nav-link {
+      font-size: 0.6em; color: var(--text3); text-decoration: none; letter-spacing: 1px;
+      border: 1px solid var(--border2); padding: 2px 8px; border-radius: 3px;
+    }
+    a.nav-link:hover { color: var(--text2); border-color: var(--border); }
+    .btn-theme {
+      font-size: 0.75em; background: none; border: 1px solid var(--border2);
+      color: var(--text3); border-radius: 3px; padding: 2px 7px; cursor: pointer;
+      font-family: inherit; letter-spacing: 1px;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+    }
+    .btn-theme:hover { color: var(--text2); border-color: var(--border); }
+
+    /* ── Main 3-column layout ──────────────────────────────────────────── */
+    .main {
+      display: grid;
+      grid-template-columns: 26% 29% 1fr;
+      gap: 0;
+      flex: 1;
+      overflow: hidden;
+      min-width: 0;
+    }
+    .col {
+      padding: 5px 7px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      overflow: hidden;
+      min-width: 0;
+    }
+    .col + .col { border-left: 1px solid var(--bg4); }
+
+    /* ── Section labels ─────────────────────────────────────────────────── */
+    .lbl {
+      font-size: 0.52em; letter-spacing: 3px; color: var(--lbl-color);
+      text-transform: uppercase; flex-shrink: 0;
+    }
+
+    /* ── Topic cards ────────────────────────────────────────────────────── */
+    .topics { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+
+    .topic-card {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--bg2); border: 1px solid var(--border);
+      border-left: 3px solid var(--bg3);
+      padding: 4px 8px; border-radius: 3px;
+      transition: border-left-color 0.4s;
+      flex-shrink: 0;
+    }
+    .topic-card.ok   { border-left-color: var(--ok); }
+    .topic-card.warn { border-left-color: var(--warn); }
+    .topic-card.dead { border-left-color: var(--dead); }
+
+    .topic-name { font-size: 0.72em; color: var(--text2); letter-spacing: 1px; flex: 1; }
+    .topic-hz {
+      font-size: 1.05em; font-weight: bold; color: var(--text6);
+      text-align: right; white-space: nowrap; transition: color 0.4s;
+    }
+    .topic-hz.ok   { color: var(--ok); }
+    .topic-hz.warn { color: var(--warn); }
+    .topic-hz.dead { color: var(--dead); }
+    .unit { font-size: 0.42em; font-weight: normal; color: var(--unit-color); margin-left: 2px; }
+
+    /* ── System diag ────────────────────────────────────────────────────── */
+    .sys-row {
+      display: flex; gap: 6px; flex-shrink: 0;
+    }
+    .sys-cell {
+      flex: 1; background: var(--bg2); border: 1px solid var(--border);
+      padding: 4px 8px; border-radius: 3px;
+    }
+    .sys-lbl  { font-size: 0.52em; color: var(--text4); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 2px; }
+    .sys-val  { font-size: 1.2em; font-weight: bold; color: var(--text2); }
+    .sys-val.ok   { color: var(--ok); }
+    .sys-val.warn { color: var(--warn); }
+    .sys-val.crit { color: var(--dead); }
+    .sys-sub  { font-size: 0.55em; color: var(--lbl-color); margin-top: 1px; }
+
+    /* CPU core bars */
+    .core-bars { display: flex; gap: 5px; align-items: flex-end; height: 32px; margin-top: 3px; }
+    .core-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; height: 100%; }
+    .core-track {
+      flex: 1; width: 100%; background: var(--bg3); border-radius: 2px;
+      overflow: hidden; display: flex; align-items: flex-end;
+    }
+    .core-fill {
+      width: 100%; background: var(--ok); border-radius: 2px;
+      transition: height 0.4s ease, background 0.4s ease; min-height: 1px;
+    }
+    .core-fill.warn { background: var(--warn); }
+    .core-fill.crit { background: var(--dead); }
+    .core-lbl { font-size: 0.45em; color: var(--lbl-color); }
+
+    /* RAM bar */
+    .ram-track {
+      background: var(--bg3); height: 8px; border-radius: 4px;
+      overflow: hidden; margin: 5px 0 3px;
+    }
+    .ram-fill {
+      height: 100%; border-radius: 4px; background: var(--ok);
+      transition: width 0.5s ease, background 0.5s ease;
+    }
+    .ram-fill.warn { background: var(--warn); }
+    .ram-fill.crit { background: var(--dead); }
+
+    /* Throttle flags */
+    .t-flags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+    .t-flag  {
+      font-size: 0.52em; padding: 2px 6px; border-radius: 2px;
+      background: var(--bg3); color: var(--text4); letter-spacing: 1px;
+    }
+    .t-flag.ok-flag   { background: #001a00; color: #00aa33; }
+    .t-flag.now-flag  { background: #3a0000; color: #ff4422; }
+    .t-flag.hist-flag { background: #261300; color: #aa7700; }
+    html.light .t-flag.ok-flag   { background: #ccffdd; color: #005511; }
+    html.light .t-flag.now-flag  { background: #ffcccc; color: #880000; }
+    html.light .t-flag.hist-flag { background: #fff0cc; color: #664400; }
+
+    /* ── Right column ────────────────────────────────────────────────────── */
+
+    /* Disk */
+    .disk-card { background: var(--bg2); border: 1px solid var(--border); padding: 7px 12px; border-radius: 3px; flex-shrink: 0; }
+    .disk-track { background: var(--bg3); height: 9px; border-radius: 5px; overflow: hidden; margin: 6px 0 5px; }
+    .disk-fill  { height: 100%; border-radius: 5px; background: var(--ok); transition: width 0.6s ease, background 0.6s ease; }
+    .disk-fill.warn { background: var(--warn); }
+    .disk-fill.crit { background: var(--dead); }
+    .disk-stats { display: flex; justify-content: space-between; font-size: 0.65em; color: var(--text3); }
+
+    /* Divider */
+    .divider { border: none; border-top: 1px solid var(--bg4); margin: 2px 0; flex-shrink: 0; }
+
+    /* Sensor restart */
+    .ctrl-row { display: flex; gap: 7px; flex-shrink: 0; }
+    .btn-ctrl {
+      flex: 1; padding: 9px 6px;
+      font-size: 0.68em; font-weight: bold; letter-spacing: 1px;
+      text-transform: uppercase; border: none; border-radius: 4px;
+      cursor: pointer; font-family: inherit;
+      transition: transform 0.1s, opacity 0.15s;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none;
+    }
+    .btn-ctrl:active { transform: scale(0.95); opacity: 0.8; }
+    .btn-all { background: #180800; color: #aa4400; border: 1px solid #3a1500; }
+    html.light .btn-all { background: #ffe8dd; color: #882200; border-color: #cc6600; }
+    .btn-spindle-on  { background: #001a14; color: #00bb77; border: 1px solid #004433; }
+    .btn-spindle-off { background: #120018; color: #9966cc; border: 1px solid #330044; }
+    html.light .btn-spindle-on  { background: #ccffe8; color: #005533; border-color: #009955; }
+    html.light .btn-spindle-off { background: #eeddf7; color: #440066; border-color: #8844aa; }
+    .rpm-seg { display: inline-flex; border: 1px solid #222; border-radius: 4px; overflow: hidden; }
+    .rpm-opt {
+      font-family: inherit; font-size: 0.78em; padding: 5px 9px; cursor: pointer;
+      background: #111; color: #666; border: none; border-left: 1px solid #222;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .rpm-opt:first-child { border-left: none; }
+    .rpm-opt-active { background: #1a1a1a; color: #aaa; }
+    html.light .rpm-seg { border-color: #bbb; }
+    html.light .rpm-opt { background: #ddd; color: #888; border-left-color: #bbb; }
+    html.light .rpm-opt-active { background: #ccc; color: #333; }
+    .ctrl-msg { font-size: 0.58em; color: var(--text4); min-height: 14px; text-align: center; flex-shrink: 0; }
+
+    /* Rec status */
+    .rec-row {
+      display: flex; align-items: center; gap: 8px;
+      flex-shrink: 0; padding: 0 2px;
+    }
+    .rec-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bg3); flex-shrink: 0; }
+    .rec-dot.active { background: #cc2200; animation: pulse 1s infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(204,34,0,0.4); }
+      50%       { opacity: 0.7; box-shadow: 0 0 0 4px rgba(204,34,0,0); }
+    }
+    .rec-lbl  { font-size: 0.65em; color: var(--text4); letter-spacing: 1px; }
+    .rec-lbl.active { color: #cc4422; }
+    .rec-bag  { font-size: 0.55em; color: var(--text3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+    .rec-elapsed {
+      display: none;
+      font-size: 2.6em; font-variant-numeric: tabular-nums; letter-spacing: 2px;
+      color: #cc4422; text-align: center; padding: 10px 0 4px;
+      font-weight: 300;
+    }
+    .rec-elapsed.active { display: block; }
+    html.light .rec-elapsed { color: #aa1100; }
+
+    /* Topic card inactive (not in current mode) */
+    .topic-card.inactive { opacity: 0.22; }
+
+    /* Big REC/STOP buttons */
+    .buttons  { display: flex; gap: 8px; flex-shrink: 0; }
+    .btn {
+      flex: 1; font-size: 1em; font-weight: bold;
+      padding: 10px 0;
+      letter-spacing: 2px; text-transform: uppercase;
+      border: none; border-radius: 5px; cursor: pointer;
+      font-family: inherit; transition: transform 0.1s, opacity 0.15s;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none;
+    }
+    .btn:active:not(:disabled) { transform: scale(0.96); opacity: 0.8; }
+    .btn:disabled { opacity: 0.22; cursor: not-allowed; }
+    .btn-start { background: #004d1a; color: #00ff66; border: 1px solid #007a28; }
+    .btn-stop  { background: #550010; color: #ff4422; border: 1px solid #880018; }
+    .btn-start:not(:disabled):hover { background: #006622; }
+    .btn-stop:not(:disabled):hover  { background: #660015; }
+    html.light .btn-start { background: #ccffdd; color: #005511; border-color: #007722; }
+    html.light .btn-stop  { background: #ffcccc; color: #880000; border-color: #cc0000; }
+
+    /* ── Motor control ───────────────────────────────────────────────────── */
+    .motor-sel {
+      display: flex; gap: 0; flex-shrink: 0;
+      border: 1px solid var(--border2); border-radius: 4px; overflow: hidden;
+    }
+    .motor-btn {
+      flex: 1; padding: 7px 4px;
+      font-size: 0.68em; font-weight: bold; letter-spacing: 1px;
+      text-transform: uppercase; border: none;
+      background: var(--bg); color: var(--text5);
+      font-family: inherit; cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none;
+      border-right: 1px solid var(--border2);
+    }
+    .motor-btn:last-child { border-right: none; }
+    .motor-btn:active { opacity: 0.7; }
+    .motor-btn.m-stop   { background: #1a0000; color: #cc2200; border-color: #330000; }
+    .motor-btn.m-static { background: #001a2e; color: #00aaff; border-color: #003355; }
+    html.light .motor-btn.m-stop   { background: #ffcccc; color: #880000; border-color: #cc0000; }
+    html.light .motor-btn.m-static { background: #cce8ff; color: #004488; border-color: #0066aa; }
+    .motor-status {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 0.58em; color: var(--text4); padding: 1px 3px; flex-shrink: 0;
+    }
+    .motor-rpm { color: var(--text3); }
+
+    /* ── Footer ──────────────────────────────────────────────────────────── */
+    .footer {
+      height: 22px; flex-shrink: 0;
+      padding: 0 10px;
+      font-size: 0.5em; color: var(--text3);
+      border-top: 1px solid var(--bg4);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .btn-shutdown, .btn-update {
+      background: none; border: 1px solid var(--border2);
+      color: var(--text4); font-size: 1em; font-family: inherit;
+      padding: 1px 8px; border-radius: 3px; cursor: pointer;
+      letter-spacing: 1px;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+    }
+    .btn-shutdown:hover { color: #cc2200; border-color: #660000; }
+    .btn-update:hover { color: #2288cc; border-color: #004466; }
+
+    /* ── Shutdown overlay ────────────────────────────────────────────────── */
+    .sd-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.75); z-index: 200;
+      justify-content: center; align-items: center; padding: 20px;
+    }
+    .sd-overlay.show { display: flex; }
+    .sd-box {
+      background: var(--bg2); border: 1px solid #660000;
+      border-radius: 6px; padding: 28px 24px;
+      width: 100%; max-width: 300px; text-align: center;
+    }
+    .sd-title { font-size: 0.9em; color: #cc2200; letter-spacing: 3px; margin-bottom: 10px; }
+    .sd-msg   { font-size: 0.68em; color: var(--text2); margin-bottom: 22px; line-height: 1.5; }
+    .sd-btns  { display: flex; gap: 10px; }
+    .sd-cancel  { flex:1; padding:14px; background:var(--bg3); color:var(--text2); border:1px solid var(--border); border-radius:4px; font-family:inherit; font-size:0.75em; cursor:pointer; }
+    .sd-confirm { flex:1; padding:14px; background:#550000; color:#ff4422; border:1px solid #880000; border-radius:4px; font-family:inherit; font-size:0.75em; font-weight:bold; cursor:pointer; letter-spacing:1px; }
+    html.light .sd-confirm { background:#ffcccc; color:#880000; border-color:#cc0000; }
+
+    /* ── Post-stop bag finalization modal ─────────────────────────────── */
+    .rec-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.78); z-index: 250;
+      justify-content: center; align-items: center; padding: 12px;
+    }
+    .rec-overlay.show { display: flex; }
+    .rec-box {
+      background: var(--bg2); border: 1px solid var(--border2);
+      border-radius: 6px; padding: 14px 14px 12px;
+      width: 100%; max-width: 560px; max-height: 96vh;
+      display: flex; flex-direction: column; gap: 8px;
+      overflow-y: auto;
+    }
+    .rec-title { font-size: 0.85em; color: var(--ok); letter-spacing: 2px; text-align: center; margin-bottom: 2px; }
+    .rec-row1  { display: flex; align-items: center; gap: 8px; }
+    .rec-lbl-input { font-size: 0.65em; color: var(--text2); min-width: 70px; letter-spacing: 1px; }
+    .rec-name-input {
+      flex: 1; padding: 10px; font-family: inherit; font-size: 0.85em;
+      background: var(--bg3); color: var(--text); border: 1px solid var(--border);
+      border-radius: 4px; outline: none; min-width: 0;
+    }
+    .rec-name-input:focus { border-color: var(--ok); }
+    .rec-help { font-size: 0.55em; color: var(--text4); text-align: right; margin-top: -4px; }
+
+    .rec-verify-row { display: flex; gap: 8px; align-items: center; }
+    .rec-btn-verify {
+      flex: 1; padding: 10px 18px; background: var(--bg3); color: var(--text);
+      border: 1px solid var(--border); border-radius: 4px;
+      font-family: inherit; font-size: 0.7em; font-weight: bold;
+      letter-spacing: 1px; cursor: pointer; touch-action: manipulation;
+    }
+    .rec-result {
+      min-height: 40px; max-height: 160px; overflow-y: auto;
+      font-size: 0.62em; color: var(--text2); padding: 8px 10px;
+      background: var(--bg3); border: 1px solid var(--border); border-radius: 3px;
+      display: none; line-height: 1.4;
+    }
+    .rec-result.show { display: block; }
+    .rec-result-summary { font-weight: bold; margin-bottom: 4px; font-size: 1.1em; letter-spacing: 1px; }
+    .rec-result ul { margin: 0; padding-left: 16px; }
+    .rec-result .ck-ok   { color: var(--ok); }
+    .rec-result .ck-warn { color: var(--warn); }
+    .rec-result .ck-fail { color: var(--dead); }
+
+    .rec-btns { display: flex; gap: 8px; margin-top: 4px; }
+    .rec-btn {
+      flex: 1; padding: 14px 8px; font-family: inherit;
+      font-size: 0.72em; font-weight: bold; letter-spacing: 1px;
+      text-transform: uppercase; border: 1px solid; border-radius: 4px;
+      cursor: pointer; touch-action: manipulation;
+    }
+    .rec-btn-save    { background: #003d18; color: #00cc44; border-color: #007a28; }
+    .rec-btn-discard { background: #2a0a0a; color: #aa4400; border-color: #6a1818; }
+    .rec-btn-discard.confirm { background: #660018; color: #ff4422; border-color: #aa0028; animation: pulse 1s infinite; }
+    html.light .rec-btn-save             { background: #ccffdd; color: #005511; border-color: #007722; }
+    html.light .rec-btn-discard          { background: #ffe8dd; color: #882200; border-color: #cc6600; }
+    html.light .rec-btn-discard.confirm  { background: #ffcccc; color: #880000; border-color: #cc0000; }
+    /* ── Mobile / portrait phones ───────────────────────────────────────
+       The desktop layout is a fixed full-viewport 3-column kiosk grid with
+       overflow hidden (built for the old LCD). On a phone the columns squish
+       and content is clipped, so below 768px we stack vertically, allow
+       scrolling, and enlarge tap targets. Desktop layout is untouched. */
+    @media (max-width: 768px) {
+      html, body {
+        width: 100%;
+        height: auto;
+        min-height: 100vh;
+        overflow-x: hidden;
+        overflow-y: auto;
+        -webkit-text-size-adjust: 100%;
+        font-size: 17px;
+      }
+      .header {
+        height: auto;
+        padding: 12px 16px;
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        background: var(--bg);
+      }
+      .header-title { font-size: 0.95em; letter-spacing: 3px; }
+      .header-right { gap: 12px; }
+      .header-time  { font-size: 0.78em; }
+      a.nav-link    { font-size: 0.72em; padding: 6px 12px; }
+      .btn-theme    { font-size: 0.95em; padding: 6px 12px; }
+
+      .main {
+        display: flex;
+        flex-direction: column;
+        flex: none;
+        overflow: visible;
+      }
+      .col {
+        overflow: visible;
+        padding: 14px 16px;
+        gap: 10px;
+      }
+      .col + .col {
+        border-left: none;
+        border-top: 1px solid var(--border);
+      }
+      .topics { flex: none; }
+      .lbl { font-size: 0.66em; }
+
+      /* roomier touch targets */
+      .btn        { padding: 16px 0; font-size: 1.15em; }
+      .btn-ctrl   { padding: 14px 8px; font-size: 0.82em; }
+      .motor-btn  { padding: 13px 6px; font-size: 0.8em; }
+      .btn-shutdown { padding: 6px 14px; }
+
+      .footer { height: auto; padding: 10px 14px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <span class="header-title">&#9632; Lumirion</span>
+    <div class="header-right">
+      <button class="btn-theme" id="btn-theme" onclick="toggleTheme()">☀</button>
+      <a href="/bags" class="nav-link">BAGS</a>
+      <span class="header-time" id="hdr-time">--:--:--</span>
+    </div>
+  </div>
+
+  <!-- 3-column main -->
+  <div class="main">
+
+    <!-- ── Col 1: Topics ── -->
+    <div class="col">
+      <div class="lbl">ROS2 Topics</div>
+      <div class="topics" id="topics-container"></div>
+    </div>
+
+    <!-- ── Col 2: Motor + Sensor Control + Record ── -->
+    <div class="col">
+      <div class="lbl">Motor</div>
+      <div class="motor-sel">
+        <button class="motor-btn" id="mbtn-x" onclick="sendMotor('x')">Stop</button>
+        <button class="motor-btn" id="mbtn-r" onclick="sendMotor('r')">Start</button>
+      </div>
+      <div class="motor-status">
+        <span id="motor-mode-lbl">--</span>
+        <span class="motor-rpm" id="motor-rpm"></span>
+      </div>
+
+      <hr class="divider">
+
+      <div class="lbl">Sensor Control</div>
+      <div class="ctrl-row">
+        <button class="btn-ctrl btn-all" onclick="restartAll()">&#8635; All Sensors</button>
+        <button class="btn-ctrl btn-spindle-off" id="btn-spindle" onclick="toggleSpindle()">&#9654; Spindle</button>
+        <span class="rpm-seg" id="rpm-seg">
+          <button class="rpm-opt" id="rpm-300" onclick="setSpindleRpm(300)">300</button><button class="rpm-opt rpm-opt-active" id="rpm-600" onclick="setSpindleRpm(600)">600</button>
+        </span>
+      </div>
+      <div class="ctrl-msg" id="ctrl-msg"></div>
+
+      <hr class="divider">
+
+      <div class="rec-row">
+        <div class="rec-dot" id="rec-dot"></div>
+        <span class="rec-lbl" id="rec-lbl">IDLE</span>
+        <span class="rec-bag" id="rec-bag"></span>
+      </div>
+
+      <div class="rec-elapsed" id="rec-elapsed">00:00:00</div>
+
+      <div class="buttons">
+        <button class="btn btn-start" id="btn-start" onclick="startRec()">&#9679;&nbsp;REC</button>
+        <button class="btn btn-stop"  id="btn-stop"  onclick="stopRec()" disabled>&#9632;&nbsp;STOP</button>
+      </div>
+    </div>
+
+    <!-- ── Col 3: System Diagnostics + Storage ── -->
+    <div class="col">
+      <div class="lbl">System</div>
+
+      <!-- Temp + Freq -->
+      <div class="sys-row">
+        <div class="sys-cell">
+          <div class="sys-lbl">CPU Temp</div>
+          <div class="sys-val" id="cpu-temp">--</div>
+          <div class="sys-sub" id="cpu-temp-sub"></div>
+        </div>
+        <div class="sys-cell">
+          <div class="sys-lbl">CPU Freq</div>
+          <div class="sys-val" id="cpu-freq">--</div>
+          <div class="sys-sub" id="cpu-freq-sub"></div>
+        </div>
+        <div class="sys-cell">
+          <div class="sys-lbl">Uptime</div>
+          <div class="sys-val" style="font-size:0.85em" id="uptime">--</div>
+        </div>
+      </div>
+
+      <!-- CPU cores -->
+      <div class="sys-cell">
+        <div class="sys-lbl">CPU Cores &nbsp;<span id="cpu-avg" style="color:#555"></span></div>
+        <div class="core-bars" id="core-bars"></div>
+      </div>
+
+      <!-- RAM -->
+      <div class="sys-cell">
+        <div class="sys-lbl">RAM &nbsp;<span id="ram-label" style="color:#555"></span></div>
+        <div class="ram-track"><div class="ram-fill" id="ram-bar" style="width:0%"></div></div>
+        <div class="sys-sub" id="ram-sub"></div>
+      </div>
+
+      <!-- Throttle -->
+      <div class="sys-cell">
+        <div class="sys-lbl">Throttle</div>
+        <div class="t-flags" id="throttle-flags"><span class="t-flag">--</span></div>
+      </div>
+
+      <hr class="divider">
+
+      <div class="lbl">Storage</div>
+      <div class="disk-card">
+        <div class="disk-track"><div class="disk-fill" id="disk-bar" style="width:0%"></div></div>
+        <div class="disk-stats">
+          <span id="disk-used">--</span>
+          <span id="disk-pct">--%</span>
+          <span id="disk-free">-- free</span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- .main -->
+
+  <div class="footer">
+    <span id="footer">connecting...</span>
+    <button class="btn-update" id="btn-update" onclick="startUpdate()">&#8593; Update</button>
+    <button class="btn-shutdown" onclick="document.getElementById('sd-overlay').classList.add('show')">&#9210; SHUTDOWN</button>
+  </div>
+
+  <!-- Update log overlay -->
+  <div class="sd-overlay" id="upd-overlay">
+    <div class="sd-box" style="width:min(520px,92vw)">
+      <div class="sd-title">&#8593; OTA UPDATE</div>
+      <pre id="upd-log" style="text-align:left;font-size:0.72em;max-height:260px;overflow-y:auto;background:#0a0a0a;padding:10px;border-radius:4px;color:#ccc;white-space:pre-wrap;word-break:break-all"></pre>
+      <div class="sd-btns" style="margin-top:10px">
+        <button class="sd-cancel" onclick="closeUpdateOverlay()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Shutdown confirm overlay -->
+  <div class="sd-overlay" id="sd-overlay">
+    <div class="sd-box">
+      <div class="sd-title">&#9888; SHUTDOWN</div>
+      <div class="sd-msg">Power off Lumirion?<br>Unsaved recordings will be stopped.</div>
+      <div class="sd-btns">
+        <button class="sd-cancel" onclick="document.getElementById('sd-overlay').classList.remove('show')">Cancel</button>
+        <button class="sd-confirm" onclick="confirmShutdown()">POWER OFF</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Post-stop bag finalization modal -->
+  <div class="rec-overlay" id="rec-overlay">
+    <div class="rec-box">
+      <div class="rec-title">RECORDING STOPPED</div>
+      <div class="rec-row1">
+        <label class="rec-lbl-input" for="rec-name-input">Bag name:</label>
+        <input id="rec-name-input" class="rec-name-input" type="text" maxlength="64"
+               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+               oninput="this.value = this.value.replace(/[^A-Za-z0-9_\-]/g,'').slice(0,64)" />
+      </div>
+      <div class="rec-help">A&ndash;Z &nbsp; a&ndash;z &nbsp; 0&ndash;9 &nbsp; _ &nbsp; -</div>
+      <div class="rec-verify-row">
+        <button class="rec-btn-verify" onclick="recVerify()">&#8635; VERIFY DATA</button>
+        <button class="rec-btn-verify" onclick="recPreview()">&#9711; PREVIEW</button>
+      </div>
+      <div class="rec-result" id="rec-result"></div>
+      <div class="rec-btns">
+        <button class="rec-btn rec-btn-discard" id="rec-discard-btn" onclick="recDiscardClick()">&#10006; Discard</button>
+        <button class="rec-btn rec-btn-save" onclick="recSave()">&#10003; Save</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const THRESHOLDS = {{ thresholds | tojson }};
+  const TOPIC_ORDER = ['Velodyne', 'Encoder'];
+
+  function hzClass(name, hz) {
+    if (hz === null) return '';
+    if (hz === 0)    return 'dead';
+    const t = THRESHOLDS[name];
+    if (!t) return 'ok';
+    return hz >= t[0] ? 'ok' : hz >= t[1] ? 'warn' : 'dead';
+  }
+
+  function renderTopics(hz, encoderAngle) {
+    const c = document.getElementById('topics-container');
+    TOPIC_ORDER.forEach(name => {
+      if (!(name in hz)) return;
+      const isEncoder = name === 'Encoder';
+      let card = document.getElementById('card-' + name);
+      if (!card) {
+        card = document.createElement('div');
+        card.id = 'card-' + name;
+        card.className = 'topic-card';
+        card.innerHTML =
+          `<span class="topic-name">${name}</span>` +
+          `<span class="topic-hz" id="hz-${name}">--<span class="unit">${isEncoder ? 'deg' : 'Hz'}</span></span>`;
+        c.appendChild(card);
+      }
+      const val = hz[name];
+      const cls = hzClass(name, val);
+      card.className = 'topic-card ' + cls;
+      const el = document.getElementById('hz-' + name);
+      el.className = 'topic-hz ' + cls;
+      if (isEncoder) {
+        const deg = encoderAngle;
+        el.innerHTML = (deg === null ? '--' : deg.toFixed(1)) + '<span class="unit">°</span>';
+      } else {
+        el.innerHTML = (val === null ? '--' : val === 0 ? '0' : val.toFixed(1)) + '<span class="unit">Hz</span>';
+      }
+    });
+  }
+
+  function renderDisk(d) {
+    const bar = document.getElementById('disk-bar');
+    bar.style.width = d.pct + '%';
+    bar.className = 'disk-fill' + (d.pct > 90 ? ' crit' : d.pct > 75 ? ' warn' : '');
+    document.getElementById('disk-used').textContent = d.used_gb + ' GB used';
+    document.getElementById('disk-pct').textContent  = d.pct + '%';
+    document.getElementById('disk-free').textContent = d.free_gb + ' GB free';
+  }
+
+  function renderSystem(s) {
+    // Temp
+    const t  = s.cpu_temp;
+    const te = document.getElementById('cpu-temp');
+    const tc = t === null ? '' : t > 80 ? 'crit' : t > 65 ? 'warn' : 'ok';
+    te.textContent = t !== null ? t + '°C' : '--';
+    te.className   = 'sys-val ' + tc;
+    document.getElementById('cpu-temp-sub').textContent =
+      t !== null ? (t > 80 ? 'CRITICAL' : t > 65 ? 'warm' : 'nominal') : '';
+
+    // Freq
+    const f  = s.cpu_freq_mhz, fm = s.cpu_freq_max;
+    const fe = document.getElementById('cpu-freq');
+    fe.textContent = f !== null ? f + ' MHz' : '--';
+    const fp = fm && f ? Math.round(f / fm * 100) : null;
+    fe.className   = 'sys-val ' + (fp !== null && fp < 60 ? 'warn' : 'ok');
+    document.getElementById('cpu-freq-sub').textContent = fp !== null ? fp + '% of max' : '';
+
+    // Uptime
+    document.getElementById('uptime').textContent = s.uptime || '--';
+
+    // Cores
+    const cores = s.cpu_pct || [];
+    const bars  = document.getElementById('core-bars');
+    if (bars.children.length !== cores.length) {
+      bars.innerHTML = cores.map((_, i) =>
+        `<div class="core-wrap">
+           <div class="core-track"><div class="core-fill" id="core-${i}" style="height:0%"></div></div>
+           <div class="core-lbl">C${i}</div>
+         </div>`
+      ).join('');
+    }
+    cores.forEach((pct, i) => {
+      const el = document.getElementById('core-' + i);
+      if (!el) return;
+      el.style.height = pct + '%';
+      el.className = 'core-fill' + (pct > 90 ? ' crit' : pct > 70 ? ' warn' : '');
+    });
+    document.getElementById('cpu-avg').textContent =
+      s.cpu_avg !== undefined ? s.cpu_avg + '% avg' : '';
+
+    // RAM
+    const rp = s.ram_pct;
+    const rb = document.getElementById('ram-bar');
+    rb.style.width = rp + '%';
+    rb.className   = 'ram-fill' + (rp > 90 ? ' crit' : rp > 75 ? ' warn' : '');
+    document.getElementById('ram-label').textContent = s.ram_used_gb + ' / ' + s.ram_total_gb + ' GB';
+    document.getElementById('ram-sub').textContent   = rp + '% used';
+
+    // Throttle
+    const thr = s.throttle || {}, cur = thr.current || {}, hist = thr.history || {};
+    const tf  = document.getElementById('throttle-flags');
+    if (thr.ok === null) {
+      tf.innerHTML = '<span class="t-flag">unavailable</span>';
+    } else if (thr.ok) {
+      tf.innerHTML = '<span class="t-flag ok-flag">OK — no issues</span>';
+    } else {
+      const FLAGS = [
+        { key:'undervolt', label:'UNDERVOLT' }, { key:'freq_cap', label:'FREQ-CAP' },
+        { key:'throttled', label:'THROTTLED' }, { key:'soft_temp', label:'SOFT-TEMP' },
+      ];
+      tf.innerHTML = FLAGS.map(f => {
+        if (cur[f.key])  return `<span class="t-flag now-flag">${f.label}</span>`;
+        if (hist[f.key]) return `<span class="t-flag hist-flag">${f.label}*</span>`;
+        return `<span class="t-flag">${f.label}</span>`;
+      }).join('');
+    }
+  }
+
+  // ── Mode selector ─────────────────────────────────────────────────────────
+  const currentMode = 'static';
+  let topicModes  = {};
+
+  function renderTopicActivity() {
+    Object.keys(topicModes).forEach(name => {
+      const card = document.getElementById('card-' + name);
+      if (!card) return;
+      const active = topicModes[name].includes(currentMode);
+      card.classList.toggle('inactive', !active);
+    });
+  }
+
+  // ── Recording elapsed timer ──────────────────────────────────────────────
+  let _recTickInterval = null;
+  let _recStartMono = null;  // performance.now() at the moment rec_duration was received
+
+  function fmtElapsed(s) {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  }
+
+  function renderRec(recording, bag_name, rec_duration) {
+    const dot = document.getElementById('rec-dot');
+    const lbl = document.getElementById('rec-lbl');
+    const bag = document.getElementById('rec-bag');
+    const elapsed = document.getElementById('rec-elapsed');
+    dot.className = 'rec-dot' + (recording ? ' active' : '');
+    lbl.className = 'rec-lbl' + (recording ? ' active' : '');
+    lbl.textContent = recording ? 'RECORDING' : 'IDLE';
+    bag.textContent = recording ? (bag_name || '') : '';
+    document.getElementById('btn-start').disabled = recording;
+    document.getElementById('btn-stop').disabled  = !recording;
+    renderTopicActivity();
+
+    // Elapsed timer: seed from server, tick locally between polls
+    if (recording) {
+      elapsed.classList.add('active');
+      const serverSecs = Math.floor(rec_duration || 0);
+      _recStartMono = performance.now() - serverSecs * 1000;
+      elapsed.textContent = fmtElapsed(serverSecs);
+      if (!_recTickInterval) {
+        _recTickInterval = setInterval(() => {
+          const secs = Math.floor((performance.now() - _recStartMono) / 1000);
+          document.getElementById('rec-elapsed').textContent = fmtElapsed(secs);
+        }, 1000);
+      }
+    } else {
+      elapsed.classList.remove('active');
+      elapsed.textContent = '00:00:00';
+      if (_recTickInterval) { clearInterval(_recTickInterval); _recTickInterval = null; }
+      _recStartMono = null;
+    }
+  }
+
+  let errCount = 0;
+  async function poll() {
+    try {
+      const r = await fetch('/api/status');
+      const d = await r.json();
+      topicModes = d.topic_modes || {};
+      renderTopics(d.hz, d.encoder_angle);
+      renderDisk(d.disk);
+      renderSystem(d.system);
+      renderRec(d.recording, d.bag_name, d.rec_duration);
+      updateMotorRpm(d.platform_rpm ?? null);
+      renderSpindle(d.lidar_spindle_rpm ?? null);
+      // Post-stop bag finalization modal — driven by server's pending_bag
+      if (d.pending_bag) showRecModal(d.pending_bag);
+      else if (_recModalShownFor) hideRecModal();
+      errCount = 0;
+      document.getElementById('footer').textContent = 'updated ' + new Date().toLocaleTimeString();
+    } catch(e) {
+      document.getElementById('footer').textContent = 'connection error (' + (++errCount) + ')';
+    }
+  }
+
+  async function startRec() {
+    document.getElementById('btn-start').disabled = true;
+    try {
+      await fetch('/api/record/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: currentMode }),
+      });
+    } catch(e) {}
+    poll();
+  }
+  async function stopRec() {
+    document.getElementById('btn-stop').disabled = true;
+    try { await fetch('/api/record/stop', { method: 'POST' }); } catch(e) {}
+    poll();
+  }
+
+  // ── Motor control ──────────────────────────────────────────────────────────
+  let activeMotorCmd = null;
+
+  async function sendMotor(cmd) {
+    updateMotorButtons(cmd);  // optimistic UI
+    try {
+      await fetch('/api/motor/cmd', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({cmd}),
+      });
+      activeMotorCmd = cmd;
+    } catch(e) {
+      updateMotorButtons(activeMotorCmd);  // revert on error
+    }
+  }
+
+  function updateMotorButtons(cmd) {
+    const classes = {x: 'm-stop', r: 'm-static'};
+    const labels  = {x: 'Stopped', r: 'Static Scan'};
+    ['x','r'].forEach(c => {
+      document.getElementById('mbtn-' + c).className =
+        'motor-btn' + (cmd === c ? ' ' + classes[c] : '');
+    });
+    document.getElementById('motor-mode-lbl').textContent = labels[cmd] || '--';
+  }
+
+  function updateMotorRpm(rpm) {
+    document.getElementById('motor-rpm').textContent =
+      rpm !== null ? rpm.toFixed(1) + ' RPM' : '';
+  }
+
+  let ctrlTimer;
+  function showCtrl(msg, ok) {
+    const el = document.getElementById('ctrl-msg');
+    el.textContent = msg;
+    el.style.color = ok ? '#336633' : '#663333';
+    clearTimeout(ctrlTimer);
+    ctrlTimer = setTimeout(() => el.textContent = '', 6000);
+  }
+  async function restartAll() {
+    showCtrl('Restarting all sensors...', true);
+    try { const r = await fetch('/api/sensors/restart_all', {method:'POST'}); const d = await r.json(); showCtrl(d.msg, d.ok); }
+    catch(e) { showCtrl('Failed', false); }
+  }
+
+  // ── Lidar spindle ──────────────────────────────────────────────────────────
+  let _spindleOn  = null;   // null = unknown
+  let _spindleRpm = 600;    // selected RPM (300 or 600)
+
+  function renderSpindle(rpm) {
+    const on = rpm !== null && rpm > 0;
+    if (on && rpm !== undefined) _spindleRpm = rpm;
+    _spindleOn = on;
+    const btn = document.getElementById('btn-spindle');
+    if (on) {
+      btn.className = 'btn-ctrl btn-spindle-on';
+      btn.innerHTML = '&#9646;&#9646; Spindle';
+      btn.title = `Spindle running at ${rpm} RPM — click to stop`;
+    } else {
+      btn.className = 'btn-ctrl btn-spindle-off';
+      btn.innerHTML = '&#9654; Spindle';
+      btn.title = 'Spindle stopped — click to start';
+    }
+    document.getElementById('rpm-300').className = 'rpm-opt' + (_spindleRpm === 300 ? ' rpm-opt-active' : '');
+    document.getElementById('rpm-600').className = 'rpm-opt' + (_spindleRpm === 600 ? ' rpm-opt-active' : '');
+  }
+
+  async function _sendSpindle(on, rpm) {
+    try {
+      const r = await fetch('/api/lidar/spindle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ on, rpm }),
+      });
+      const d = await r.json();
+      showCtrl(d.msg, d.ok);
+      if (d.rpm !== undefined) renderSpindle(d.rpm);
+    } catch(e) {
+      showCtrl('Spindle command failed', false);
+      renderSpindle(_spindleOn ? _spindleRpm : 0);
+    }
+  }
+
+  function toggleSpindle() {
+    const on = !_spindleOn;
+    renderSpindle(on ? _spindleRpm : 0);  // optimistic
+    _sendSpindle(on, _spindleRpm);
+  }
+
+  function setSpindleRpm(rpm) {
+    _spindleRpm = rpm;
+    renderSpindle(_spindleOn ? _spindleRpm : 0);
+    if (_spindleOn) _sendSpindle(true, rpm);  // change live if running
+  }
+
+  // ── OTA Update ─────────────────────────────────────────────────────────
+  let _updEvtSrc = null;
+  async function startUpdate() {
+    const overlay = document.getElementById('upd-overlay');
+    const log = document.getElementById('upd-log');
+    log.textContent = '';
+    overlay.classList.add('show');
+    try {
+      const r = await fetch('/api/system/update', { method: 'POST' });
+      const j = await r.json();
+      log.textContent += j.msg + '\n';
+    } catch(e) {
+      log.textContent += 'Error starting update: ' + e + '\n';
+      return;
+    }
+    if (_updEvtSrc) _updEvtSrc.close();
+    _updEvtSrc = new EventSource('/api/system/update/log');
+    _updEvtSrc.onmessage = (e) => {
+      log.textContent += e.data + '\n';
+      log.scrollTop = log.scrollHeight;
+      if (e.data.includes('UPDATE_DONE')) {
+        _updEvtSrc.close();
+        _updEvtSrc = null;
+      }
+    };
+    _updEvtSrc.onerror = () => { if (_updEvtSrc) _updEvtSrc.close(); _updEvtSrc = null; };
+  }
+  function closeUpdateOverlay() {
+    document.getElementById('upd-overlay').classList.remove('show');
+    if (_updEvtSrc) { _updEvtSrc.close(); _updEvtSrc = null; }
+  }
+
+  // ── Shutdown ───────────────────────────────────────────────────────────
+  async function confirmShutdown() {
+    document.getElementById('sd-overlay').classList.remove('show');
+    document.getElementById('footer').textContent = 'shutting down...';
+    try { await fetch('/api/shutdown', { method: 'POST' }); } catch(e) {}
+  }
+
+  // ── Theme toggle ───────────────────────────────────────────────────────
+  function applyTheme(light) {
+    document.documentElement.classList.toggle('light', light);
+    document.getElementById('btn-theme').textContent = light ? '☾' : '☀';
+  }
+  function toggleTheme() {
+    const next = !document.documentElement.classList.contains('light');
+    applyTheme(next);
+    localStorage.setItem('lumirion-theme', next ? 'light' : 'dark');
+  }
+  applyTheme(localStorage.getItem('lumirion-theme') !== 'dark');
+
+  function tick() { document.getElementById('hdr-time').textContent = new Date().toLocaleTimeString('en-GB'); }
+  setInterval(tick, 1000); tick();
+  // ── Post-stop bag finalization modal ────────────────────────────────────
+  let _recModalShownFor = null;   // bag name currently shown in modal (null = hidden)
+  let _discardArmed     = false;
+  let _discardArmTimer  = null;
+
+  function _resetDiscard() {
+    _discardArmed = false;
+    if (_discardArmTimer) { clearTimeout(_discardArmTimer); _discardArmTimer = null; }
+    const b = document.getElementById('rec-discard-btn');
+    if (b) { b.classList.remove('confirm'); b.innerHTML = '✖ Discard'; }
+  }
+
+  function showRecModal(name) {
+    if (_recModalShownFor === name) return;  // already showing for this bag
+    _recModalShownFor = name;
+    const inp = document.getElementById('rec-name-input');
+    if (inp) inp.value = name;
+    const panel = document.getElementById('rec-result');
+    if (panel) { panel.className = 'rec-result'; panel.innerHTML = ''; }
+    _resetDiscard();
+    document.getElementById('rec-overlay').classList.add('show');
+  }
+  function hideRecModal() {
+    document.getElementById('rec-overlay').classList.remove('show');
+    _recModalShownFor = null;
+    _resetDiscard();
+  }
+
+  function recPreview() {
+    const name = _recModalShownFor;
+    if (!name) return;
+    window.open('/preview/' + encodeURIComponent(name), '_blank');
+  }
+
+  async function recVerify() {
+    const name = _recModalShownFor;
+    if (!name) return;
+    const panel = document.getElementById('rec-result');
+    panel.className = 'rec-result show';
+    panel.innerHTML = '<div style="opacity:0.7">Checking&hellip;</div>';
+    try {
+      const r = await fetch('/api/record/verify', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({name})
+      });
+      const d = await r.json();
+      if (d.checks) {
+        const failAny = d.checks.some(c => c.status === 'fail');
+        const cls = d.ok ? 'ck-ok' : (failAny ? 'ck-fail' : 'ck-warn');
+        const summary = d.summary || (d.ok ? 'OK' : 'Issues found');
+        panel.innerHTML =
+          `<div class="rec-result-summary ${cls}">${summary}</div><ul>` +
+          d.checks.map(c => {
+            const lbl = (c.label || '').toString().replace(/[<>&]/g, x => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[x]));
+            const det = (c.detail || '').toString().replace(/[<>&]/g, x => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[x]));
+            return `<li class="ck-${c.status}"><b>${lbl}</b>: ${det}</li>`;
+          }).join('') + '</ul>';
+      } else {
+        panel.innerHTML = `<div class="ck-fail">${d.msg || 'Verify failed'}</div>`;
+      }
+    } catch (e) {
+      panel.innerHTML = `<div class="ck-fail">Verify request failed</div>`;
+    }
+  }
+
+  async function recSave() {
+    const cur = _recModalShownFor;
+    if (!cur) return;
+    const inp = document.getElementById('rec-name-input');
+    const newName = (inp.value || '').replace(/[^A-Za-z0-9_\-]/g,'').slice(0,64);
+    if (!newName) { alert('Name cannot be empty'); return; }
+    try {
+      const r = await fetch('/api/record/finalize', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({name: cur, new_name: newName})
+      });
+      const d = await r.json();
+      if (!d.ok) { alert(d.msg || 'Save failed'); return; }
+      // Modal closes automatically on next poll when pending_bag clears
+    } catch (e) {
+      alert('Save request failed');
+    }
+  }
+
+  function recDiscardClick() {
+    const btn = document.getElementById('rec-discard-btn');
+    if (!_discardArmed) {
+      _discardArmed = true;
+      btn.classList.add('confirm');
+      btn.innerHTML = '⚠ Tap again to discard';
+      if (_discardArmTimer) clearTimeout(_discardArmTimer);
+      _discardArmTimer = setTimeout(_resetDiscard, 4000);
+      return;
+    }
+    _resetDiscard();
+    recDiscard();
+  }
+  async function recDiscard() {
+    const cur = _recModalShownFor;
+    if (!cur) return;
+    try {
+      const r = await fetch('/api/record/discard', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({name: cur})
+      });
+      const d = await r.json();
+      if (!d.ok) alert(d.msg || 'Discard failed');
+    } catch (e) {
+      alert('Discard request failed');
+    }
+  }
+
+  poll(); setInterval(poll, 1000);
+</script>
+</body>
+</html>

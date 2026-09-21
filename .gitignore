@@ -1,0 +1,39 @@
+## Bags and large binary outputs
+bags/
+*.bag
+*.mcap
+
+## Point cloud files
+*.pcd
+*.e57
+*.las
+*.laz
+*.ply
+*.npz
+
+## Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+## PlatformIO
+.pio/
+.pioenvs/
+
+## ROS2 build
+build/
+install/
+log/
+
+## macOS
+.DS_Store
+
+## IDE
+.vscode/
+.idea/
+
+## Logs
+*.log
+update.log

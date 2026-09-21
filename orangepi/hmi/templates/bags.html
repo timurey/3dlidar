@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Bag Manager</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Theme variables (mirrors index.html) ── */
+    :root {
+      --bg:      #0d0d0d; --bg2: #111; --bg3: #1a1a1a; --bg4: #161616;
+      --border:  #1a1a1a; --border2: #1e1e1e;
+      --text:    #d0d0d0; --text2: #b0b0b0; --text3: #969696; --text4: #808080;
+      --text5:   #7a7a7a; --text6: #b0b0b0; --lbl-color: #808080;
+    }
+    html.light {
+      --bg:      #e8e8e8; --bg2: #d8d8d8; --bg3: #c8c8c8; --bg4: #d0d0d0;
+      --border:  #b0b0b0; --border2: #aaaaaa;
+      --text:    #111111; --text2: #333333; --text3: #555555; --text4: #444444;
+      --text5:   #4a4a4a; --text6: #5a5a5a; --lbl-color: #666666;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Courier New', monospace;
+      width: 100vw;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      padding: 10px;
+      gap: 8px;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 4px;
+      border-bottom: 1px solid var(--border2);
+    }
+    .header-title { font-size: 0.75em; letter-spacing: 4px; color: var(--text3); text-transform: uppercase; }
+    .header-right { display: flex; align-items: center; gap: 10px; }
+
+    a.back {
+      font-size: 0.65em;
+      color: var(--text4);
+      text-decoration: none;
+      letter-spacing: 1px;
+      border: 1px solid var(--border2);
+      padding: 3px 8px;
+      border-radius: 3px;
+    }
+    a.back:hover { color: var(--text2); border-color: var(--border); }
+    .btn-theme {
+      font-size: 0.75em; background: none; border: 1px solid var(--border2);
+      color: var(--text3); border-radius: 3px; padding: 2px 7px; cursor: pointer;
+      font-family: inherit;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+    }
+    .btn-theme:hover { color: var(--text2); border-color: var(--border); }
+
+    /* ── Summary bar ── */
+    .summary {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.68em;
+      color: var(--text3);
+      padding: 4px 2px;
+      border-bottom: 1px solid var(--border);
+    }
+    .summary span { color: var(--text2); }
+
+    /* ── Bag list ── */
+    .bag-list {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .bag-item {
+      display: flex;
+      align-items: center;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 10px 12px;
+      gap: 10px;
+      transition: border-color 0.2s;
+    }
+    .bag-item.selected {
+      border-color: #cc2200;
+      background: var(--bg3);
+    }
+    .bag-item.deleting { opacity: 0.4; pointer-events: none; }
+
+    .bag-check {
+      width: 18px; height: 18px;
+      accent-color: #cc2200;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+
+    .bag-info { flex: 1; min-width: 0; }
+    .bag-name {
+      font-size: 0.75em;
+      color: var(--text2);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .bag-meta {
+      font-size: 0.6em;
+      color: var(--text4);
+      margin-top: 3px;
+      display: flex;
+      gap: 10px;
+    }
+    .bag-size { color: var(--text3); }
+    .bag-date { color: var(--text4); }
+
+    .bag-preview-btn {
+      flex-shrink: 0;
+      font-size: 0.62em;
+      letter-spacing: 0.5px;
+      color: var(--text3);
+      text-decoration: none;
+      border: 1px solid var(--border2);
+      border-radius: 3px;
+      padding: 6px 9px;
+      white-space: nowrap;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .bag-preview-btn:hover { color: var(--text2); border-color: var(--border); }
+
+    /* ── Empty / Loading ── */
+    .empty, .loading {
+      text-align: center;
+      color: var(--text4);
+      font-size: 0.8em;
+      padding: 60px 0;
+      letter-spacing: 2px;
+    }
+
+    /* ── Bottom action bar ── */
+    .action-bar {
+      display: flex;
+      gap: 8px;
+      padding-top: 4px;
+      border-top: 1px solid var(--border);
+    }
+    .btn-action {
+      flex: 1;
+      padding: 16px 8px;
+      font-size: 0.75em;
+      font-weight: bold;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: transform 0.1s, opacity 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .btn-action:active:not(:disabled) { transform: scale(0.95); opacity: 0.8; }
+    .btn-action:disabled { opacity: 0.25; cursor: not-allowed; }
+
+    .btn-sel-all { background: var(--bg2); color: var(--text2); border: 1px solid var(--border); }
+    .btn-del-sel { background: #2a0000; color: #ff4422; border: 1px solid #550000; }
+    html.light .btn-del-sel { background: #ffcccc; color: #880000; border-color: #cc0000; }
+
+    /* ── Confirm overlay ── */
+    .overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 100;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+    .overlay.show { display: flex; }
+    .confirm-box {
+      background: var(--bg2);
+      border: 1px solid #cc2200;
+      border-radius: 6px;
+      padding: 24px 20px;
+      width: 100%;
+      max-width: 340px;
+      text-align: center;
+    }
+    .confirm-title { font-size: 0.85em; color: #cc3300; letter-spacing: 2px; margin-bottom: 10px; }
+    .confirm-msg   { font-size: 0.7em; color: var(--text2); margin-bottom: 20px; line-height: 1.5; }
+    .confirm-btns  { display: flex; gap: 10px; }
+    .btn-cancel     { flex:1; padding:14px; background:var(--bg3); color:var(--text2); border:1px solid var(--border); border-radius:4px; font-family:inherit; font-size:0.75em; cursor:pointer; }
+    .btn-confirm-del{ flex:1; padding:14px; background:#550000; color:#ff4422; border:1px solid #880000; border-radius:4px; font-family:inherit; font-size:0.75em; font-weight:bold; cursor:pointer; letter-spacing:1px; }
+    html.light .btn-confirm-del { background:#ffcccc; color:#880000; border-color:#cc0000; }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg2);
+      color: var(--text2);
+      font-size: 0.7em;
+      padding: 8px 16px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      white-space: nowrap;
+      z-index: 200;
+    }
+    .toast.show { opacity: 1; }
+    /* ── Mobile / portrait phones ── */
+    @media (max-width: 768px) {
+      html, body { width: 100%; font-size: 17px; overflow-x: hidden; }
+      .bag-item   { padding: 14px 14px; }
+      .bag-check  { width: 22px; height: 22px; }
+      .btn-action { padding: 14px 10px; font-size: 0.8em; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <a href="/" class="back">&#8592; Back</a>
+    <span class="header-title">&#9632; Bag Manager</span>
+    <div class="header-right">
+      <button class="btn-theme" id="btn-theme" onclick="toggleTheme()">☀</button>
+    </div>
+  </div>
+
+  <div class="summary" id="summary">
+    <span>Loading...</span>
+  </div>
+
+  <div class="bag-list" id="bag-list">
+    <div class="loading">LOADING...</div>
+  </div>
+
+  <div class="action-bar">
+    <button class="btn-action btn-sel-all" id="btn-sel-all" onclick="toggleSelectAll()">Select All</button>
+    <button class="btn-action btn-del-sel" id="btn-del-sel" onclick="deleteSelected()" disabled>Delete Selected</button>
+  </div>
+
+  <!-- Confirm overlay -->
+  <div class="overlay" id="overlay">
+    <div class="confirm-box">
+      <div class="confirm-title">&#9888; DELETE BAGS</div>
+      <div class="confirm-msg" id="confirm-msg"></div>
+      <div class="confirm-btns">
+        <button class="btn-cancel" onclick="closeConfirm()">Cancel</button>
+        <button class="btn-confirm-del" onclick="confirmDelete()">DELETE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+<script>
+  let bags = [];
+  let selected = new Set();
+  let pendingDelete = [];
+
+  // ── Load bags ───────────────────────────────────────────────────────────
+  async function load() {
+    try {
+      const res  = await fetch('/api/bags');
+      const data = await res.json();
+      bags = data.bags;
+      renderSummary(data);
+      renderList();
+    } catch(e) {
+      document.getElementById('bag-list').innerHTML =
+        '<div class="empty">Failed to load bags</div>';
+    }
+  }
+
+  // ── Render summary ──────────────────────────────────────────────────────
+  function renderSummary(data) {
+    document.getElementById('summary').innerHTML =
+      `<span>${data.count} bag${data.count !== 1 ? 's' : ''}</span>` +
+      `<span>Total: <span>${data.total}</span></span>`;
+  }
+
+  // ── Render list ─────────────────────────────────────────────────────────
+  function renderList() {
+    const container = document.getElementById('bag-list');
+    if (bags.length === 0) {
+      container.innerHTML = '<div class="empty">No bags found</div>';
+      updateActionBar();
+      return;
+    }
+
+    container.innerHTML = bags.map(bag => `
+      <div class="bag-item ${selected.has(bag.name) ? 'selected' : ''}" id="item-${CSS.escape(bag.name)}">
+        <input type="checkbox" class="bag-check"
+          ${selected.has(bag.name) ? 'checked' : ''}
+          onchange="toggleSelect('${bag.name}', this.checked)">
+        <div class="bag-info">
+          <div class="bag-name" title="${bag.name}">${bag.name}</div>
+          <div class="bag-meta">
+            <span class="bag-size">${bag.size}</span>
+            <span class="bag-date">${bag.mtime}</span>
+          </div>
+        </div>
+        <a class="bag-preview-btn" href="/preview/${encodeURIComponent(bag.name)}">&#9711; Preview</a>
+      </div>
+    `).join('');
+
+    updateActionBar();
+  }
+
+  // ── Selection ───────────────────────────────────────────────────────────
+  function toggleSelect(name, checked) {
+    checked ? selected.add(name) : selected.delete(name);
+    const item = document.getElementById('item-' + CSS.escape(name));
+    if (item) item.className = 'bag-item' + (checked ? ' selected' : '');
+    updateActionBar();
+  }
+
+  function toggleSelectAll() {
+    if (selected.size === bags.length) {
+      selected.clear();
+    } else {
+      bags.forEach(b => selected.add(b.name));
+    }
+    renderList();
+  }
+
+  function updateActionBar() {
+    const n = selected.size;
+    document.getElementById('btn-sel-all').textContent =
+      selected.size === bags.length && bags.length > 0 ? 'Deselect All' : 'Select All';
+    const delBtn = document.getElementById('btn-del-sel');
+    delBtn.disabled = n === 0;
+    delBtn.textContent = n > 0 ? `Delete (${n})` : 'Delete Selected';
+  }
+
+  // ── Delete selected ─────────────────────────────────────────────────────
+  function deleteSelected() {
+    pendingDelete = Array.from(selected);
+    const totalSize = bags
+      .filter(b => selected.has(b.name))
+      .reduce((acc, b) => acc + b.size_b, 0);
+    document.getElementById('confirm-msg').innerHTML =
+      `Permanently delete <strong style="color:#cc4422">${pendingDelete.length} bag${pendingDelete.length > 1 ? 's' : ''}</strong>?<br>` +
+      `This will free ${fmtBytes(totalSize)}.`;
+    document.getElementById('overlay').classList.add('show');
+  }
+
+  function closeConfirm() {
+    document.getElementById('overlay').classList.remove('show');
+    pendingDelete = [];
+  }
+
+  async function confirmDelete() {
+    document.getElementById('overlay').classList.remove('show');
+    const toDelete = [...pendingDelete];
+    pendingDelete = [];
+
+    for (const name of toDelete) {
+      const item = document.getElementById('item-' + CSS.escape(name));
+      if (item) item.classList.add('deleting');
+    }
+
+    let failed = 0;
+    for (const name of toDelete) {
+      try {
+        const res = await fetch('/api/bags/' + encodeURIComponent(name), { method: 'DELETE' });
+        const data = await res.json();
+        if (!data.ok) failed++;
+        else selected.delete(name);
+      } catch(e) { failed++; }
+    }
+
+    showToast(failed === 0
+      ? `Deleted ${toDelete.length} bag${toDelete.length > 1 ? 's' : ''}`
+      : `${toDelete.length - failed} deleted, ${failed} failed`
+    );
+    await load();
+  }
+
+  // ── Toast ───────────────────────────────────────────────────────────────
+  let toastTimer;
+  function showToast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────
+  function fmtBytes(n) {
+    const units = ['B','KB','MB','GB'];
+    for (const u of units) { if (n < 1024) return n.toFixed(1) + ' ' + u; n /= 1024; }
+    return n.toFixed(1) + ' TB';
+  }
+
+  // ── Theme toggle (shared with index via localStorage) ───────────────────
+  function applyTheme(light) {
+    document.documentElement.classList.toggle('light', light);
+    document.getElementById('btn-theme').textContent = light ? '☾' : '☀';
+  }
+  function toggleTheme() {
+    const next = !document.documentElement.classList.contains('light');
+    applyTheme(next);
+    localStorage.setItem('lumirion-theme', next ? 'light' : 'dark');
+  }
+  applyTheme(localStorage.getItem('lumirion-theme') !== 'dark');
+
+  // ── Init ─────────────────────────────────────────────────────────────────
+  load();
+</script>
+</body>
+</html>

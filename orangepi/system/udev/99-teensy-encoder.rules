@@ -1,0 +1,3 @@
+# Stable symlink for Teensy encoder (SerialNumber: 17761250)
+# Assigns /dev/teensy_encoder regardless of ttyACM enumeration order
+SUBSYSTEM=="tty", ATTRS{idVendor}=="16c0", ATTRS{idProduct}=="0483", ATTRS{serial}=="17761250", SYMLINK+="teensy_encoder"

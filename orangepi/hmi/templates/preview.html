@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Preview &mdash; {{ bag_name }}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    .hidden { display: none !important; }
+
+    /* ── Theme variables (mirrors bags.html / index.html) ── */
+    :root {
+      --bg:      #0d0d0d; --bg2: #111; --bg3: #1a1a1a; --bg4: #161616;
+      --border:  #1a1a1a; --border2: #1e1e1e;
+      --text:    #d0d0d0; --text2: #b0b0b0; --text3: #969696; --text4: #808080;
+      --canvas-bg: #050505;
+    }
+    html.light {
+      --bg:      #e8e8e8; --bg2: #d8d8d8; --bg3: #c8c8c8; --bg4: #d0d0d0;
+      --border:  #b0b0b0; --border2: #aaaaaa;
+      --text:    #111111; --text2: #333333; --text3: #555555; --text4: #444444;
+      --canvas-bg: #d8dadd;
+    }
+
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Courier New', monospace;
+      width: 100vw;
+      height: 100vh;   /* fallback for browsers without dvh support */
+      height: 100dvh;  /* actual visible viewport on mobile (excludes the
+                          address-bar strip that 100vh wrongly counts) —
+                          this is what was pushing the bottom bar off-screen */
+      overflow: hidden;
+    }
+    body { display: flex; flex-direction: column; }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border2);
+      flex-shrink: 0;
+    }
+    .header-title {
+      font-size: 0.72em; letter-spacing: 2px; color: var(--text3);
+      text-transform: uppercase; white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis; margin: 0 10px;
+    }
+    .header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    a.back, button.back {
+      font-size: 0.65em; color: var(--text4); text-decoration: none;
+      letter-spacing: 1px; border: 1px solid var(--border2); padding: 4px 9px;
+      border-radius: 3px; background: none; font-family: inherit; cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    a.back:hover, button.back:hover { color: var(--text2); border-color: var(--border); }
+    .btn-theme {
+      font-size: 0.75em; background: none; border: 1px solid var(--border2);
+      color: var(--text3); border-radius: 3px; padding: 3px 8px; cursor: pointer;
+      font-family: inherit; -webkit-tap-highlight-color: transparent;
+    }
+    .btn-theme:hover { color: var(--text2); border-color: var(--border); }
+
+    /* ── Viewport ── */
+    .viewport-wrap { position: relative; flex: 1; min-height: 0; }
+    canvas { width: 100%; height: 100%; display: block; background: var(--canvas-bg); touch-action: none; }
+
+    .overlay-msg {
+      position: absolute; inset: 0; display: flex; align-items: center;
+      justify-content: center; text-align: center; padding: 20px;
+      font-size: 0.8em; color: var(--text2); letter-spacing: 1px;
+      background: var(--canvas-bg); pointer-events: none;
+    }
+    .overlay-msg.hidden { display: none; }
+    .overlay-msg .err { color: #ff5533; }
+    .overlay-msg button {
+      pointer-events: auto; margin-top: 14px; font-family: inherit; font-size: 0.85em;
+      background: var(--bg3); color: var(--text2); border: 1px solid var(--border);
+      border-radius: 4px; padding: 8px 16px; cursor: pointer;
+    }
+
+    .stats-panel {
+      position: absolute; top: 8px; left: 8px;
+      background: rgba(0,0,0,0.45); border: 1px solid var(--border2); border-radius: 4px;
+      padding: 6px 10px; font-size: 0.62em; color: #ccc; line-height: 1.6;
+      pointer-events: none; letter-spacing: 0.5px;
+    }
+    html.light .stats-panel { background: rgba(255,255,255,0.6); color: #222; }
+    .stats-panel .warn { color: #ff9933; }
+    .stats-panel .dim  { opacity: 0.6; }
+
+    /* ── Controls bar ── */
+    .controls-bar {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+      padding: 8px 10px; padding-bottom: max(8px, env(safe-area-inset-bottom));
+      border-top: 1px solid var(--border);
+      flex-shrink: 0; font-size: 0.68em; color: var(--text2);
+    }
+    .ctrl-group { display: flex; align-items: center; gap: 6px; }
+    .controls-bar select, .controls-bar input[type=range] { font-family: inherit; }
+    .controls-bar select {
+      background: var(--bg2); color: var(--text); border: 1px solid var(--border);
+      border-radius: 3px; padding: 5px 6px; font-size: 1em;
+    }
+    .controls-bar input[type=range] { width: 90px; accent-color: #cc2200; }
+    .btn-mini {
+      font-family: inherit; font-size: 1em; background: var(--bg2); color: var(--text2);
+      border: 1px solid var(--border); border-radius: 3px; padding: 5px 10px; cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-mini:active { opacity: 0.7; }
+    .btn-mini.active { color: #ff6a3d; border-color: #cc2200; }
+    .btn-mini:disabled { opacity: 0.35; cursor: default; }
+    .spacer { flex: 1; }
+
+    /* ── Deskew tuning panel ── */
+    .deskew-bar {
+      display: none; flex-wrap: wrap; align-items: center; gap: 10px;
+      padding: 7px 10px; border-top: 1px solid var(--border2);
+      flex-shrink: 0; font-size: 0.68em; color: var(--text2);
+      background: var(--bg2);
+    }
+    .deskew-bar.open { display: flex; }
+    .deskew-bar .ctrl-group { gap: 5px; }
+    .deskew-bar input[type=range] { width: 80px; accent-color: #3399cc; font-family: inherit; }
+    .deskew-val { min-width: 3.5em; text-align: right; color: var(--text3); }
+    .btn-deskew-reset {
+      font-family: inherit; font-size: 1em; background: none; color: var(--text4);
+      border: 1px solid var(--border2); border-radius: 3px; padding: 3px 8px; cursor: pointer;
+    }
+    .btn-deskew-reset:hover { color: var(--text2); border-color: var(--border); }
+    .deskew-dirty { color: #3399cc !important; border-color: #226688 !important; }
+
+    @media (max-width: 768px) {
+      html, body { font-size: 16px; }
+      .header-title { font-size: 0.65em; }
+      .controls-bar { font-size: 0.75em; gap: 8px; }
+      .controls-bar input[type=range] { width: 70px; }
+      .deskew-bar input[type=range] { width: 65px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <button class="back" id="btn-back">&#8592; Back</button>
+    <span class="header-title" title="{{ bag_name }}">&#9632; {{ bag_name }}</span>
+    <div class="header-right">
+      <button class="btn-theme" id="btn-theme" onclick="toggleTheme()">&#9728;</button>
+    </div>
+  </div>
+
+  <div class="viewport-wrap">
+    <canvas id="gl"></canvas>
+    <div class="stats-panel hidden" id="stats"></div>
+    <div class="overlay-msg" id="msg">Loading&hellip;</div>
+  </div>
+
+  <!-- Deskew tuning (axis tilt correction) -->
+  <div class="deskew-bar" id="deskew-bar">
+    <div class="ctrl-group">
+      <span class="dim">Pitch</span>
+      <input type="range" id="ds-pitch" min="-15" max="15" step="0.1" value="0">
+      <span class="deskew-val" id="ds-pitch-val">0.0°</span>
+    </div>
+    <div class="ctrl-group">
+      <span class="dim">Yaw</span>
+      <input type="range" id="ds-yaw" min="-15" max="15" step="0.1" value="-1.6">
+      <span class="deskew-val" id="ds-yaw-val">-1.6°</span>
+    </div>
+    <div class="ctrl-group">
+      <span class="dim">Phase</span>
+      <input type="range" id="ds-phase" min="-180" max="180" step="1" value="0">
+      <span class="deskew-val" id="ds-phase-val">0°</span>
+    </div>
+    <div class="ctrl-group">
+      <span class="dim">Center Z</span>
+      <input type="range" id="ds-cz" min="-50" max="50" step="1" value="0">
+      <span class="deskew-val" id="ds-cz-val">0mm</span>
+    </div>
+    <button class="btn-deskew-reset" id="btn-deskew-reset" onclick="deskewReset()">Reset</button>
+  </div>
+
+  <div class="controls-bar">
+    <div class="ctrl-group">
+      <span class="dim">Detail</span>
+      <select id="detail-select">
+        <option value="fast">Fast</option>
+        <option value="default" selected>Default</option>
+        <option value="high">High</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <button class="btn-mini active" id="btn-color-height" onclick="setColorMode(0)">Height</button>
+      <button class="btn-mini" id="btn-color-range" onclick="setColorMode(1)">Range</button>
+    </div>
+    <div class="ctrl-group">
+      <span class="dim">Size</span>
+      <input type="range" id="pt-size" min="0.15" max="2.5" step="0.05" value="0.5">
+    </div>
+    <div class="ctrl-group">
+      <button class="btn-mini" onclick="setView('top')" title="Top view">T</button>
+      <button class="btn-mini" onclick="setView('front')" title="Front view">F</button>
+      <button class="btn-mini" onclick="setView('side')" title="Side view">S</button>
+      <button class="btn-mini" onclick="setView('iso')" title="Isometric view">I</button>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn-mini" id="btn-deskew-toggle" onclick="toggleDeskew()">&#9783; Deskew</button>
+    <button class="btn-mini" id="btn-more-detail" onclick="loadMoreDetail()">&#8853; More Detail</button>
+    <button class="btn-mini" onclick="resetView()">&#8635;</button>
+  </div>
+
+<script>
+  const BAG_NAME = {{ bag_name | tojson }};
+  const DETAIL_PRESETS = {
+    fast:    { max_clouds: 10, max_points: 60000,  target_rotations: 1.5 },
+    default: { max_clouds: 25, max_points: 150000, target_rotations: 2.5 },
+    high:    { max_clouds: 50, max_points: 300000, target_rotations: 4   },
+  };
+  const DETAIL_CAP = { max_clouds: 300, max_points: 1000000, target_rotations: 20 };
+  let currentReq = { ...DETAIL_PRESETS.default };
+
+  // ── Theme (shared with bags.html / index.html via localStorage) ──────────
+  function applyTheme(light) {
+    document.documentElement.classList.toggle('light', light);
+    document.getElementById('btn-theme').textContent = light ? '☾' : '☀';
+    if (gl) setClearColor();
+  }
+  function toggleTheme() {
+    const next = !document.documentElement.classList.contains('light');
+    applyTheme(next);
+    localStorage.setItem('lumirion-theme', next ? 'light' : 'dark');
+  }
+
+  // ── Back / Close ───────────────────────────────────────────────────────
+  const backBtn = document.getElementById('btn-back');
+  if (window.opener) {
+    backBtn.textContent = '✕ Close';
+    backBtn.onclick = () => window.close();
+  } else {
+    backBtn.onclick = () => {
+      if (history.length > 1) history.back();
+      else location.href = '/bags';
+    };
+  }
+
+  // ── WebGL setup ────────────────────────────────────────────────────────
+  const canvas = document.getElementById('gl');
+  const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+  const msgEl   = document.getElementById('msg');
+  const statsEl = document.getElementById('stats');
+
+  if (!gl) {
+    msgEl.innerHTML = '<span class="err">WebGL is not available in this browser.</span>';
+  }
+
+  const VERT_SRC = `
+    attribute vec3 aPos;
+    uniform mat4 uView;
+    uniform mat4 uProj;
+    uniform float uPointSize;
+    uniform float uColorMode;
+    uniform float uValMin;
+    uniform float uValMax;
+    uniform vec3 uCenter;
+    varying float vT;
+    void main() {
+      vec3 wp = vec3(aPos.x, -aPos.y, aPos.z);  // confirmed rig orientation: raw Y flipped
+      vec4 viewPos = uView * vec4(wp, 1.0);
+      gl_Position = uProj * viewPos;
+      float val = (uColorMode < 0.5) ? wp.y : length(wp - uCenter);
+      float span = max(1e-6, uValMax - uValMin);
+      vT = clamp((val - uValMin) / span, 0.0, 1.0);
+      float dist = max(1.0, -viewPos.z);
+      gl_PointSize = clamp(uPointSize * (80.0 / dist), 1.0, 6.0);
+    }
+  `;
+
+  const FRAG_SRC = `
+    precision mediump float;
+    varying float vT;
+    vec3 ramp(float t) {
+      vec3 c0 = vec3(0.12, 0.14, 0.62);
+      vec3 c1 = vec3(0.10, 0.65, 0.80);
+      vec3 c2 = vec3(0.95, 0.85, 0.20);
+      vec3 c3 = vec3(0.86, 0.16, 0.10);
+      if (t < 0.333) return mix(c0, c1, t / 0.333);
+      if (t < 0.666) return mix(c1, c2, (t - 0.333) / 0.333);
+      return mix(c2, c3, (t - 0.666) / 0.334);
+    }
+    void main() {
+      vec2 d = gl_PointCoord - vec2(0.5);
+      if (dot(d, d) > 0.25) discard;
+      gl_FragColor = vec4(ramp(vT), 1.0);
+    }
+  `;
+
+  function compileShader(type, src) {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+      throw new Error('Shader compile error: ' + gl.getShaderInfoLog(sh));
+    }
+    return sh;
+  }
+
+  let prog, locs, posBuf;
+  if (gl) {
+    prog = gl.createProgram();
+    gl.attachShader(prog, compileShader(gl.VERTEX_SHADER, VERT_SRC));
+    gl.attachShader(prog, compileShader(gl.FRAGMENT_SHADER, FRAG_SRC));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      throw new Error('Program link error: ' + gl.getProgramInfoLog(prog));
+    }
+    locs = {
+      aPos:       gl.getAttribLocation(prog, 'aPos'),
+      uView:      gl.getUniformLocation(prog, 'uView'),
+      uProj:      gl.getUniformLocation(prog, 'uProj'),
+      uPointSize: gl.getUniformLocation(prog, 'uPointSize'),
+      uColorMode: gl.getUniformLocation(prog, 'uColorMode'),
+      uValMin:    gl.getUniformLocation(prog, 'uValMin'),
+      uValMax:    gl.getUniformLocation(prog, 'uValMax'),
+      uCenter:    gl.getUniformLocation(prog, 'uCenter'),
+    };
+    posBuf = gl.createBuffer();
+    gl.enable(gl.DEPTH_TEST);
+  }
+
+  // ── Minimal mat4 (column-major, matches WebGL convention) ────────────────
+  function mat4Perspective(fovyRad, aspect, near, far) {
+    const f = 1.0 / Math.tan(fovyRad / 2);
+    const nf = 1 / (near - far);
+    return new Float32Array([
+      f / aspect, 0, 0, 0,
+      0, f, 0, 0,
+      0, 0, (far + near) * nf, -1,
+      0, 0, 2 * far * near * nf, 0,
+    ]);
+  }
+
+  function vSub(a, b) { return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
+  function vLen(a) { return Math.hypot(a[0], a[1], a[2]); }
+  function vNorm(a) { const l = vLen(a) || 1; return [a[0]/l, a[1]/l, a[2]/l]; }
+  function vCross(a, b) {
+    return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+  }
+  function vDot(a, b) { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]; }
+
+  function mat4LookAt(eye, target, up) {
+    const zAxis = vNorm(vSub(eye, target));
+    const xAxis = vNorm(vCross(up, zAxis));
+    const yAxis = vCross(zAxis, xAxis);
+    return new Float32Array([
+      xAxis[0], yAxis[0], zAxis[0], 0,
+      xAxis[1], yAxis[1], zAxis[1], 0,
+      xAxis[2], yAxis[2], zAxis[2], 0,
+      -vDot(xAxis, eye), -vDot(yAxis, eye), -vDot(zAxis, eye), 1,
+    ]);
+  }
+
+  // ── Camera (spherical orbit around a target, world +Y up) ─────────────────
+  // Confirmed correct orientation for this rig is raw Y flipped — baked
+  // directly into the vertex shader (wp = vec3(aPos.x, -aPos.y, aPos.z)).
+  const cam = { yaw: Math.PI * 0.25, pitch: 0.45, radius: 10, target: [0, 0, 0] };
+  const _CAM_KEY = 'lumirion-cam-' + BAG_NAME;
+
+  function saveCam() {
+    try { localStorage.setItem(_CAM_KEY, JSON.stringify(
+      { yaw: cam.yaw, pitch: cam.pitch, radius: cam.radius, target: cam.target }
+    )); } catch(e) {}
+  }
+
+  function restoreCam() {
+    try {
+      const s = JSON.parse(localStorage.getItem(_CAM_KEY));
+      if (s && typeof s.yaw === 'number' && isFinite(s.yaw)) {
+        cam.yaw = s.yaw; cam.pitch = s.pitch; cam.radius = s.radius;
+        cam.target = Array.isArray(s.target) ? s.target : [0,0,0];
+        return true;
+      }
+    } catch(e) {}
+    return false;
+  }
+
+  function camEye() {
+    const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+    const sy = Math.sin(cam.yaw),   cy = Math.cos(cam.yaw);
+    return [
+      cam.target[0] + cam.radius * cp * sy,
+      cam.target[1] + cam.radius * sp,
+      cam.target[2] + cam.radius * cp * cy,
+    ];
+  }
+
+  // ── Cloud state ────────────────────────────────────────────────────────
+  let cloud = null;   // { positions, count, center, upMin, upMax, rMin, rMax }
+  let colorMode = 0;  // 0 = height, 1 = range
+  let pointSize = 0.5;
+  let _saveCamTimer = null;
+
+  function setClearColor() {
+    const light = document.documentElement.classList.contains('light');
+    if (light) gl.clearColor(0.847, 0.855, 0.867, 1.0);
+    else       gl.clearColor(0.02, 0.02, 0.02, 1.0);
+  }
+
+  function resizeCanvas() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    const nw = Math.max(1, Math.round(w * dpr));
+    const nh = Math.max(1, Math.round(h * dpr));
+    if (canvas.width !== nw || canvas.height !== nh) {
+      canvas.width = nw; canvas.height = nh;
+    }
+    if (gl) gl.viewport(0, 0, canvas.width, canvas.height);
+  }
+
+  function draw() {
+    if (!gl || !cloud) return;
+    if (_saveCamTimer) clearTimeout(_saveCamTimer);
+    _saveCamTimer = setTimeout(saveCam, 400);
+    resizeCanvas();
+    setClearColor();
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.useProgram(prog);
+
+    const aspect = canvas.width / Math.max(1, canvas.height);
+    const proj = mat4Perspective(Math.PI / 3.2, aspect, 0.05, 500.0);
+    const view = mat4LookAt(camEye(), cam.target, [0, 1, 0]);
+
+    gl.uniformMatrix4fv(locs.uProj, false, proj);
+    gl.uniformMatrix4fv(locs.uView, false, view);
+    gl.uniform1f(locs.uPointSize, pointSize);
+    gl.uniform1f(locs.uColorMode, colorMode);
+    gl.uniform3f(locs.uCenter, cloud.center[0], cloud.center[1], cloud.center[2]);
+    if (colorMode === 0) {
+      gl.uniform1f(locs.uValMin, cloud.upMin);
+      gl.uniform1f(locs.uValMax, cloud.upMax);
+    } else {
+      gl.uniform1f(locs.uValMin, cloud.rMin);
+      gl.uniform1f(locs.uValMax, cloud.rMax);
+    }
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+    gl.enableVertexAttribArray(locs.aPos);
+    gl.vertexAttribPointer(locs.aPos, 3, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.POINTS, 0, cloud.count);
+  }
+
+  // ── Load preview from the server ──────────────────────────────────────
+  function loadPreview(presetName) {
+    currentReq = { ...(DETAIL_PRESETS[presetName] || DETAIL_PRESETS.default) };
+    return fetchPreview();
+  }
+
+  function loadMoreDetail() {
+    currentReq = {
+      max_clouds:       Math.min(DETAIL_CAP.max_clouds, Math.round(currentReq.max_clouds * 1.6)),
+      max_points:       Math.min(DETAIL_CAP.max_points, Math.round(currentReq.max_points * 1.6)),
+      target_rotations: Math.min(DETAIL_CAP.target_rotations, +(currentReq.target_rotations * 1.6).toFixed(2)),
+    };
+    return fetchPreview();
+  }
+
+  function updateMoreDetailButton() {
+    const btn = document.getElementById('btn-more-detail');
+    if (!btn) return;
+    const atCap = currentReq.target_rotations >= DETAIL_CAP.target_rotations &&
+                  currentReq.max_clouds >= DETAIL_CAP.max_clouds;
+    btn.disabled = atCap;
+    btn.textContent = atCap ? '⊕ Max Detail' : '⊕ More Detail';
+  }
+
+  async function fetchPreview() {
+    const p = currentReq;
+    msgEl.classList.remove('hidden');
+    msgEl.innerHTML = 'Deskewing on the Pi&hellip;<br><span style="opacity:0.6">' +
+      p.target_rotations + ' rotations, usually a few seconds</span>';
+    statsEl.classList.add('hidden');
+
+    const ds = getDeskewParams();
+    const url = `/api/bags/${encodeURIComponent(BAG_NAME)}/preview` +
+                `?max_clouds=${p.max_clouds}&max_points=${p.max_points}&target_rotations=${p.target_rotations}` +
+                `&mount_pitch=${ds.pitch}&mount_yaw=${ds.yaw}&angle_offset=${ds.phase}&center_z=${ds.cz}`;
+    let res;
+    try {
+      res = await fetch(url);
+    } catch (e) {
+      showError('Request failed: ' + e.message);
+      return;
+    }
+    if (!res.ok) {
+      let m = 'Preview failed (' + res.status + ')';
+      try { const d = await res.json(); if (d.msg) m = d.msg; } catch (e) {}
+      showError(m);
+      return;
+    }
+
+    const buf = await res.arrayBuffer();
+    const positions = new Float32Array(buf);
+    const count = positions.length / 3;
+    if (count === 0) {
+      showError('No points in this preview.');
+      return;
+    }
+
+    // World frame = raw with Y flipped (see vertex shader), so min/max swap
+    // sign and order on that axis only.
+    let xMin=Infinity,xMax=-Infinity, yMin=Infinity,yMax=-Infinity, zMin=Infinity,zMax=-Infinity;
+    for (let i = 0; i < positions.length; i += 3) {
+      const x = positions[i], y = positions[i+1], z = positions[i+2];
+      if (x < xMin) xMin = x; if (x > xMax) xMax = x;
+      if (y < yMin) yMin = y; if (y > yMax) yMax = y;
+      if (z < zMin) zMin = z; if (z > zMax) zMax = z;
+    }
+    const center = [(xMin+xMax)/2, -(yMin+yMax)/2, (zMin+zMax)/2];
+    const upMin = -yMax, upMax = -yMin;
+
+    let rMin = Infinity, rMax = -Infinity;
+    for (let i = 0; i < positions.length; i += 3) {
+      const dx = positions[i]-(xMin+xMax)/2, dy = positions[i+1]-(yMin+yMax)/2, dz = positions[i+2]-(zMin+zMax)/2;
+      const r = Math.sqrt(dx*dx+dy*dy+dz*dz);
+      if (r < rMin) rMin = r; if (r > rMax) rMax = r;
+    }
+
+    cloud = { positions, count, center, upMin, upMax, rMin, rMax };
+
+    if (gl) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+    }
+
+    const diag = vLen([xMax-xMin, yMax-yMin, zMax-zMin]) || 1;
+    if (!restoreCam()) {
+      cam.target = cloud.center.slice();
+      cam.radius = diag * 1.3;
+      cam.yaw = Math.PI * 0.25;
+      cam.pitch = 0.45;
+    }
+
+    msgEl.classList.add('hidden');
+    renderStats(res.headers, count);
+    updateMoreDetailButton();
+    draw();
+  }
+
+  function showError(m) {
+    msgEl.classList.remove('hidden');
+    msgEl.innerHTML = '<div><span class="err">' + m.replace(/[<>&]/g, x => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[x])) +
+      '</span><br><button onclick="loadPreview(document.getElementById(\'detail-select\').value)">Retry</button></div>';
+  }
+
+  function renderStats(headers, count) {
+    const clouds   = headers.get('X-Cloud-Count');
+    const total    = headers.get('X-Cloud-Total');
+    const encSrc   = headers.get('X-Encoder-Source') || '';
+    const lowCov   = parseInt(headers.get('X-Low-Coverage-Clouds') || '0', 10);
+    const rotations = headers.get('X-Rotations-Captured');
+    const computeS = headers.get('X-Compute-S');
+    let html = `${count.toLocaleString()} pts &middot; ${clouds}/${total} clouds &middot; ${computeS}s`;
+    html += `<br><span class="dim">${rotations} rotations &middot; ${encSrc}</span>`;
+    if (lowCov > 0) html += `<br><span class="warn">${lowCov} cloud(s) had partial encoder coverage</span>`;
+    statsEl.innerHTML = html;
+    statsEl.classList.remove('hidden');
+  }
+
+  // ── Controls ───────────────────────────────────────────────────────────
+  function setColorMode(m) {
+    colorMode = m;
+    document.getElementById('btn-color-height').classList.toggle('active', m === 0);
+    document.getElementById('btn-color-range').classList.toggle('active', m === 1);
+    draw();
+  }
+
+  // Standard view presets. In this rig Y is "up" in world space (raw Y flipped in shader).
+  // pitch=π/2 → top-down; pitch=0 → equatorial; yaw rotates azimuth.
+  const VIEW_PRESETS = {
+    top:   { yaw: 0,            pitch: Math.PI / 2 - 0.01 },
+    front: { yaw: 0,            pitch: 0.05 },
+    side:  { yaw: Math.PI / 2,  pitch: 0.05 },
+    iso:   { yaw: Math.PI * 0.25, pitch: 0.55 },
+  };
+
+  function setView(name) {
+    if (!cloud) return;
+    const v = VIEW_PRESETS[name];
+    if (!v) return;
+    cam.target = cloud.center.slice();
+    cam.radius = cloud.rMax * 1.6 || 10;
+    cam.yaw = v.yaw;
+    cam.pitch = v.pitch;
+    draw();
+  }
+
+  function resetView() {
+    if (!cloud) return;
+    try { localStorage.removeItem(_CAM_KEY); } catch(e) {}
+    cam.target = cloud.center.slice();
+    cam.radius = cloud.rMax * 1.6 || 10;
+    cam.yaw = Math.PI * 0.25;
+    cam.pitch = 0.45;
+    draw();
+  }
+
+  document.getElementById('pt-size').addEventListener('input', (e) => {
+    pointSize = parseFloat(e.target.value);
+    draw();
+  });
+
+  document.getElementById('detail-select').addEventListener('change', (e) => {
+    loadPreview(e.target.value);
+  });
+
+  // ── Pointer orbit (1 finger) + pinch-zoom/pan (2 fingers) + wheel zoom ────
+  const pointers = new Map();
+  let lastPinchDist = null;
+  let lastMidpoint  = null;
+
+  function panCamera(dxScreen, dyScreen) {
+    const eye = camEye();
+    const forward = vNorm(vSub(cam.target, eye));
+    const right = vNorm(vCross(forward, [0, 1, 0]));
+    const up = vCross(right, forward);
+    const scale = cam.radius * 0.0016;
+    const mx = -dxScreen * scale, my = dyScreen * scale;
+    cam.target = [
+      cam.target[0] + right[0]*mx + up[0]*my,
+      cam.target[1] + right[1]*mx + up[1]*my,
+      cam.target[2] + right[2]*mx + up[2]*my,
+    ];
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    const prev = pointers.get(e.pointerId);
+    const cur = { x: e.clientX, y: e.clientY };
+    pointers.set(e.pointerId, cur);
+
+    if (pointers.size === 1) {
+      const dx = cur.x - prev.x, dy = cur.y - prev.y;
+      cam.yaw   -= dx * 0.006;
+      cam.pitch = Math.max(-1.5, Math.min(1.5, cam.pitch - dy * 0.006));
+      draw();
+    } else if (pointers.size === 2) {
+      const pts = Array.from(pointers.values());
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      const mid  = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+      if (lastPinchDist !== null) {
+        const ratio = lastPinchDist / Math.max(1, dist);
+        cam.radius = Math.max(0.2, Math.min(500, cam.radius * ratio));
+      }
+      if (lastMidpoint !== null) {
+        panCamera(mid.x - lastMidpoint.x, mid.y - lastMidpoint.y);
+      }
+      lastPinchDist = dist;
+      lastMidpoint  = mid;
+      draw();
+    }
+  });
+
+  function releasePointer(e) {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) { lastPinchDist = null; lastMidpoint = null; }
+  }
+  canvas.addEventListener('pointerup', releasePointer);
+  canvas.addEventListener('pointercancel', releasePointer);
+  canvas.addEventListener('pointerleave', releasePointer);
+
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const factor = Math.exp(e.deltaY * 0.001);
+    cam.radius = Math.max(0.2, Math.min(500, cam.radius * factor));
+    draw();
+  }, { passive: false });
+
+  window.addEventListener('resize', draw);
+
+  // ── Deskew tuning panel ───────────────────────────────────────────────
+  let _deskewDirty = false;
+  let _deskewTimer = null;
+
+  function getDeskewParams() {
+    return {
+      pitch: parseFloat(document.getElementById('ds-pitch').value),
+      yaw:   parseFloat(document.getElementById('ds-yaw').value),
+      phase: parseFloat(document.getElementById('ds-phase').value),
+      cz:    (parseFloat(document.getElementById('ds-cz').value) / 1000).toFixed(4),
+    };
+  }
+
+  const DESKEW_DEFAULTS = { pitch: 0, yaw: -1.6, phase: 0, cz: 0 };
+
+  function deskewIsDefault() {
+    const ds = getDeskewParams();
+    return ds.pitch === DESKEW_DEFAULTS.pitch &&
+           ds.yaw   === DESKEW_DEFAULTS.yaw   &&
+           ds.phase === DESKEW_DEFAULTS.phase  &&
+           parseFloat(ds.cz) === DESKEW_DEFAULTS.cz;
+  }
+
+  function updateDeskewDisplay() {
+    const pitch = parseFloat(document.getElementById('ds-pitch').value);
+    const yaw   = parseFloat(document.getElementById('ds-yaw').value);
+    const phase = parseFloat(document.getElementById('ds-phase').value);
+    const czMm  = parseFloat(document.getElementById('ds-cz').value);
+    document.getElementById('ds-pitch-val').textContent = pitch.toFixed(1) + '°';
+    document.getElementById('ds-yaw-val').textContent   = yaw.toFixed(1)   + '°';
+    document.getElementById('ds-phase-val').textContent = phase.toFixed(0) + '°';
+    document.getElementById('ds-cz-val').textContent    = czMm.toFixed(0)  + 'mm';
+    const dirty = !deskewIsDefault();
+    _deskewDirty = dirty;
+    const btn = document.getElementById('btn-deskew-toggle');
+    btn.classList.toggle('deskew-dirty', dirty);
+    btn.textContent = dirty ? '⚙ Deskew*' : '⚙ Deskew';
+  }
+
+  function deskewReset() {
+    document.getElementById('ds-pitch').value = DESKEW_DEFAULTS.pitch;
+    document.getElementById('ds-yaw').value   = DESKEW_DEFAULTS.yaw;
+    document.getElementById('ds-phase').value = DESKEW_DEFAULTS.phase;
+    document.getElementById('ds-cz').value    = DESKEW_DEFAULTS.cz;
+    updateDeskewDisplay();
+    scheduleDeskewFetch();
+  }
+
+  function toggleDeskew() {
+    const bar = document.getElementById('deskew-bar');
+    bar.classList.toggle('open');
+  }
+
+  function scheduleDeskewFetch() {
+    if (_deskewTimer) clearTimeout(_deskewTimer);
+    _deskewTimer = setTimeout(() => { _deskewTimer = null; fetchPreview(); }, 600);
+  }
+
+  ['ds-pitch', 'ds-yaw', 'ds-phase', 'ds-cz'].forEach(id => {
+    const el = document.getElementById(id);
+    el.addEventListener('input', () => { updateDeskewDisplay(); scheduleDeskewFetch(); });
+  });
+
+  // ── Init ───────────────────────────────────────────────────────────────
+  applyTheme(localStorage.getItem('lumirion-theme') !== 'dark');
+  if (gl) loadPreview('default');
+</script>
+</body>
+</html>

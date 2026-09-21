@@ -1,0 +1,12 @@
+[Unit]
+Description=Select wifi mode at boot (home client, else field AP)
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/wifi-mode-selector.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,20 @@
+[Unit]
+Description=HMI Bridge — sensor orchestration and recording for the Pi 5 scanner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=openclaw
+WorkingDirectory=/home/openclaw/ros2_ws
+Environment="ROS_DOMAIN_ID=0"
+# Must be rmw_fastrtps_cpp, not rmw_cyclonedds_cpp — cyclonedds intermittently
+# produces empty PointCloud2 bursts on this rig.
+Environment="RMW_IMPLEMENTATION=rmw_fastrtps_cpp"
+Environment="CYCLONEDDS_URI=file:///home/openclaw/.ros/cyclonedds.xml"
+ExecStart=/bin/bash -c "source /opt/ros/jazzy/setup.bash && source /home/openclaw/ros2_ws/install/setup.bash && ros2 launch hmi_bridge hmi_bridge.launch.py use_serial:=false bag_directory:=/home/openclaw/bags"
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

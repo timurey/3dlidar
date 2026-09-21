@@ -1,0 +1,12 @@
+[Unit]
+Description=Set wifi regulatory domain to US
+Before=NetworkManager.service wpa_supplicant.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/iw reg set US
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
