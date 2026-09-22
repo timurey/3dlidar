@@ -538,6 +538,97 @@ def get_system() -> dict:
     }
 
 
+# ── WiFi Management ───────────────────────────────────────────────────────────
+
+_HOTSPOT_CON = 'hotspot'
+_SSID_RE     = re.compile(r'^[\x20-\x7E]{1,32}$')
+
+
+def _nmcli(*args, timeout: int = 10) -> tuple[bool, str]:
+    """Run nmcli with given args. Returns (ok, combined stdout+stderr)."""
+    try:
+        r = subprocess.run(
+            ['nmcli'] + list(args),
+            capture_output=True, text=True, timeout=timeout
+        )
+        return r.returncode == 0, (r.stdout + r.stderr).strip()
+    except subprocess.TimeoutExpired:
+        return False, 'nmcli timed out'
+    except Exception as e:
+        return False, str(e)
+
+
+def _nmcli_fields(line: str) -> list[str]:
+    """Split a nmcli --terse line on unescaped colons."""
+    parts, cur, i = [], [], 0
+    while i < len(line):
+        if line[i] == '\\' and i + 1 < len(line) and line[i + 1] == ':':
+            cur.append(':')
+            i += 2
+        elif line[i] == ':':
+            parts.append(''.join(cur))
+            cur = []
+            i += 1
+        else:
+            cur.append(line[i])
+            i += 1
+    parts.append(''.join(cur))
+    return parts
+
+
+def get_wifi_status() -> dict:
+    """Return current WiFi mode, SSID, IP, signal, and saved connection names."""
+    mode, ssid, ip, signal, internet = 'disconnected', None, None, None, False
+
+    ok, out = _nmcli('-t', '-f', 'NAME,TYPE', 'con', 'show', '--active')
+    if ok:
+        for line in out.splitlines():
+            f = _nmcli_fields(line)
+            if len(f) >= 2 and f[1] in ('802-11-wireless', 'wifi'):
+                mode = 'ap' if f[0] == _HOTSPOT_CON else 'client'
+                break
+
+    if mode in ('client', 'ap'):
+        ok2, ip_out = _nmcli('-t', '-f', 'IP4.ADDRESS', 'dev', 'show', 'wlan0')
+        if ok2:
+            for line in ip_out.splitlines():
+                f = _nmcli_fields(line)
+                if len(f) >= 2 and f[0].startswith('IP4.ADDRESS') and '/' in f[1]:
+                    ip = f[1].split('/')[0]
+                    break
+
+    if mode == 'client':
+        ok3, wlist = _nmcli('-t', '-f', 'IN-USE,SSID,SIGNAL', 'dev', 'wifi', 'list')
+        if ok3:
+            for line in wlist.splitlines():
+                f = _nmcli_fields(line)
+                if len(f) >= 3 and f[0] == '*':
+                    ssid = f[1] or None
+                    try:
+                        signal = int(f[2])
+                    except (ValueError, IndexError):
+                        pass
+                    break
+        try:
+            urllib.request.urlopen(
+                'http://connectivitycheck.gstatic.com/generate_204', timeout=2)
+            internet = True
+        except Exception:
+            pass
+
+    saved = []
+    ok4, saved_out = _nmcli('-t', '-f', 'NAME,TYPE', 'con', 'show')
+    if ok4:
+        for line in saved_out.splitlines():
+            f = _nmcli_fields(line)
+            if (len(f) >= 2 and f[1] in ('802-11-wireless', 'wifi')
+                    and f[0] != _HOTSPOT_CON):
+                saved.append(f[0])
+
+    return {'mode': mode, 'ssid': ssid, 'ip': ip,
+            'signal': signal, 'internet': internet, 'saved': saved}
+
+
 # ── Init ─────────────────────────────────────────────────────────────────────
 
 monitor   = HzMonitor(TOPICS)
@@ -1136,6 +1227,122 @@ def system_update_log():
     return app.response_class(generate(), mimetype='text/event-stream',
                               headers={'Cache-Control': 'no-cache',
                                        'X-Accel-Buffering': 'no'})
+
+
+@app.route('/settings')
+def settings_page():
+    return render_template('settings.html')
+
+
+# ── WiFi routes ───────────────────────────────────────────────────────────────
+
+@app.route('/api/wifi/status')
+def api_wifi_status():
+    return jsonify(get_wifi_status())
+
+
+@app.route('/api/wifi/scan')
+def api_wifi_scan():
+    ok, out = _nmcli('-t', '-f', 'SSID,SIGNAL,SECURITY', 'dev', 'wifi', 'list',
+                     '--rescan', 'yes', timeout=15)
+    if not ok:
+        return jsonify({'ok': False, 'msg': out}), 500
+
+    saved_ssids: set[str] = set()
+    ok2, saved_out = _nmcli('-t', '-f', 'NAME,802-11-wireless.ssid', 'con', 'show')
+    if ok2:
+        for line in saved_out.splitlines():
+            f = _nmcli_fields(line)
+            if len(f) >= 2 and f[1]:
+                saved_ssids.add(f[1])
+
+    seen: set[str] = set()
+    networks: list[dict] = []
+    for line in out.splitlines():
+        f = _nmcli_fields(line)
+        if len(f) < 2 or not f[0]:
+            continue
+        s = f[0]
+        if s in seen:
+            continue
+        seen.add(s)
+        try:
+            sig = int(f[1])
+        except (ValueError, IndexError):
+            sig = 0
+        networks.append({
+            'ssid':     s,
+            'signal':   sig,
+            'security': f[2] if len(f) > 2 else '',
+            'saved':    s in saved_ssids,
+        })
+    networks.sort(key=lambda n: n['signal'], reverse=True)
+    return jsonify({'ok': True, 'networks': networks})
+
+
+@app.route('/api/wifi/connect', methods=['POST'])
+def api_wifi_connect():
+    body     = request.get_json(silent=True) or {}
+    ssid     = body.get('ssid', '')
+    password = body.get('password', '')
+
+    if not _SSID_RE.match(ssid):
+        return jsonify({'ok': False, 'msg': 'Invalid SSID'}), 400
+    if password and (len(password) < 8 or len(password) > 63):
+        return jsonify({'ok': False, 'msg': 'WPA2 password must be 8–63 characters'}), 400
+    if not all(0x20 <= ord(c) <= 0x7E for c in password):
+        return jsonify({'ok': False, 'msg': 'Password contains invalid characters'}), 400
+
+    args = ['nmcli', '--wait', '30', 'dev', 'wifi', 'connect', ssid]
+    if password:
+        args += ['password', password]
+
+    try:
+        r = subprocess.run(args, capture_output=True, text=True, timeout=35)
+        ok_conn = r.returncode == 0
+        msg = (r.stdout + r.stderr).strip()
+    except subprocess.TimeoutExpired:
+        return jsonify({'ok': False, 'msg': 'Connection timed out'}), 504
+    except Exception as e:
+        return jsonify({'ok': False, 'msg': str(e)}), 500
+
+    if ok_conn:
+        _, ip_out = _nmcli('-t', '-f', 'IP4.ADDRESS', 'dev', 'show', 'wlan0')
+        ip = None
+        for line in ip_out.splitlines():
+            f = _nmcli_fields(line)
+            if len(f) >= 2 and f[0].startswith('IP4.ADDRESS') and '/' in f[1]:
+                ip = f[1].split('/')[0]
+                break
+        return jsonify({'ok': True, 'ip': ip, 'msg': f'Connected to {ssid}'})
+
+    return jsonify({'ok': False, 'msg': msg or f'Failed to connect to {ssid}'}), 400
+
+
+@app.route('/api/wifi/ap', methods=['POST'])
+def api_wifi_ap():
+    ok1, out1 = _nmcli('-t', '-f', 'NAME,TYPE', 'con', 'show', '--active')
+    if ok1:
+        for line in out1.splitlines():
+            f = _nmcli_fields(line)
+            if (len(f) >= 2 and f[1] in ('802-11-wireless', 'wifi')
+                    and f[0] != _HOTSPOT_CON):
+                _nmcli('con', 'down', f[0], timeout=5)
+                break
+    ok, out = _nmcli('con', 'up', _HOTSPOT_CON, timeout=10)
+    if ok:
+        return jsonify({'ok': True, 'ip': '10.42.0.1', 'msg': 'AP mode active'})
+    return jsonify({'ok': False, 'msg': out}), 500
+
+
+@app.route('/api/wifi/network/<path:name>', methods=['DELETE'])
+def api_wifi_network_delete(name):
+    if not name or name == _HOTSPOT_CON or '/' in name or '..' in name:
+        return jsonify({'ok': False, 'msg': 'Cannot delete this connection'}), 400
+    ok, out = _nmcli('con', 'delete', name, timeout=5)
+    if ok:
+        return jsonify({'ok': True, 'msg': f'Deleted {name}'})
+    return jsonify({'ok': False, 'msg': out}), 400
 
 
 if __name__ == '__main__':

@@ -19,14 +19,15 @@ from flask import Flask, redirect, Response
 app = Flask(__name__)
 
 # The Pi's address while it is the AP gateway (NetworkManager "shared" default).
-HMI_URL = "http://10.42.0.1:3000"
+HMI_URL      = "http://10.42.0.1:3000"
+SETTINGS_URL = "http://10.42.0.1:3000/settings"
 
 LANDING = f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SLAM Rig — Connect</title>
+  <title>Pulse — Connect</title>
   <style>
     body {{ font-family: -apple-system, system-ui, sans-serif; background:#0d1117;
            color:#e6edf3; margin:0; display:flex; min-height:100vh;
@@ -36,15 +37,19 @@ LANDING = f"""<!doctype html>
     p {{ color:#9da7b3; margin:.25rem 0 1.5rem; }}
     a.btn {{ display:inline-block; background:#2f81f7; color:#fff; text-decoration:none;
              font-weight:600; padding:.9rem 1.6rem; border-radius:10px; font-size:1.1rem; }}
+    a.btn-sec {{ display:inline-block; margin-top:.8rem; background:transparent;
+                color:#8b949e; text-decoration:none; font-size:.9rem;
+                border:1px solid #30363d; padding:.5rem 1.2rem; border-radius:8px; }}
     .hint {{ font-size:.8rem; color:#6e7681; margin-top:1.25rem; }}
   </style>
 </head>
 <body>
   <div class="card">
-    <h1>SLAM Rig Connected</h1>
-    <p>You're on the rig's wifi. Open the control panel to run scans and recordings.</p>
-    <a class="btn" href="{HMI_URL}">Open Control Panel</a>
-    <div class="hint">If the button doesn't load the dashboard, open a browser and go to<br><b>{HMI_URL}</b></div>
+    <h1>Pulse Connected</h1>
+    <p>You're on the scanner's wifi. Open the control panel to run scans and recordings.</p>
+    <a class="btn" href="{HMI_URL}">Open Control Panel</a><br>
+    <a class="btn-sec" href="{SETTINGS_URL}">&#9881; WiFi Settings</a>
+    <div class="hint">If buttons don't load, open a browser and go to<br><b>{HMI_URL}</b></div>
   </div>
 </body>
 </html>"""

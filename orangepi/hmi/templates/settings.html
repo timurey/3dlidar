@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Pulse — Settings</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0d0d0d; --bg2: #111; --bg3: #1a1a1a; --bg4: #161616;
+      --border:  #1a1a1a; --border2: #1e1e1e;
+      --text:    #d0d0d0; --text2: #b0b0b0; --text3: #969696;
+      --text4:   #808080; --text5: #7a7a7a;
+      --ok:      #00cc44; --warn: #e8a000; --dead: #cc2200;
+    }
+    html.light {
+      --bg: #e8e8e8; --bg2: #d8d8d8; --bg3: #c8c8c8; --bg4: #d0d0d0;
+      --border: #b0b0b0; --border2: #aaaaaa;
+      --text: #111; --text2: #333; --text3: #555; --text4: #444; --text5: #4a4a4a;
+      --ok: #007722; --warn: #995500; --dead: #aa1100;
+    }
+    html, body {
+      height: 100%; background: var(--bg); color: var(--text);
+      font-family: 'Courier New', monospace;
+      display: flex; flex-direction: column;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 0 14px; height: 34px;
+      border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    .header-title { font-size: 0.7em; letter-spacing: 4px; color: var(--text3); text-transform: uppercase; }
+    .header-right  { display: flex; align-items: center; gap: 14px; }
+    a.nav-link {
+      font-size: 0.6em; color: var(--text3); text-decoration: none; letter-spacing: 1px;
+      border: 1px solid var(--border2); padding: 2px 8px; border-radius: 3px;
+    }
+    a.nav-link:hover    { color: var(--text2); border-color: var(--border); }
+    a.nav-link.active   { color: var(--text2); border-color: var(--text4); }
+
+    /* ── Tab bar ── */
+    .tab-bar {
+      display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    .tab-bar button {
+      flex: 1; padding: 9px 0; background: none; border: none; border-bottom: 2px solid transparent;
+      color: var(--text4); font-family: inherit; font-size: 0.65em; letter-spacing: 2px;
+      cursor: pointer; transition: color .15s, border-color .15s;
+    }
+    .tab-bar button:hover    { color: var(--text2); }
+    .tab-bar button.active   { color: var(--text); border-bottom-color: var(--text3); }
+
+    /* ── Content ── */
+    .tab-content { display: none; flex: 1; overflow-y: auto; padding: 14px; }
+    .tab-content.active { display: block; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--bg2); border: 1px solid var(--border2);
+      border-radius: 4px; padding: 12px 14px; margin-bottom: 10px;
+    }
+    .card-title { font-size: 0.6em; letter-spacing: 2px; color: var(--text4); margin-bottom: 10px; text-transform: uppercase; }
+
+    /* ── Status row ── */
+    .status-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .mode-badge {
+      font-size: 0.65em; padding: 2px 8px; border-radius: 3px; letter-spacing: 1px;
+      font-weight: bold;
+    }
+    .mode-client  { background: #0a2a0a; color: var(--ok); border: 1px solid #1a4a1a; }
+    .mode-ap      { background: #1a1a00; color: var(--warn); border: 1px solid #3a3a00; }
+    .mode-disconnected { background: #1a0a0a; color: var(--dead); border: 1px solid #3a1a1a; }
+    .status-detail { font-size: 0.75em; color: var(--text3); }
+    .signal-bars  { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; }
+    .signal-bars span {
+      display: inline-block; width: 4px; background: var(--border2); border-radius: 1px;
+    }
+    .signal-bars span.lit { background: var(--ok); }
+    .signal-bars span:nth-child(1) { height: 4px; }
+    .signal-bars span:nth-child(2) { height: 7px; }
+    .signal-bars span:nth-child(3) { height: 10px; }
+    .signal-bars span:nth-child(4) { height: 14px; }
+    .inet-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--ok); display: inline-block; vertical-align: middle;
+    }
+    .inet-dot.no { background: var(--dead); }
+
+    /* ── Buttons ── */
+    .btn {
+      font-family: inherit; font-size: 0.65em; letter-spacing: 1px;
+      padding: 5px 14px; border-radius: 3px; cursor: pointer;
+      border: 1px solid var(--border2); background: var(--bg3); color: var(--text2);
+      transition: background .15s, color .15s;
+    }
+    .btn:hover    { background: var(--bg4); color: var(--text); }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-primary  { border-color: #2a4a2a; background: #0a2a0a; color: var(--ok); }
+    .btn-primary:hover { background: #0f3a0f; }
+    .btn-danger   { border-color: #4a1a1a; background: #2a0a0a; color: var(--dead); }
+    .btn-danger:hover  { background: #3a0f0f; }
+    .btn-warn     { border-color: #3a3a00; background: #1a1a00; color: var(--warn); }
+    .btn-warn:hover    { background: #2a2a00; }
+
+    /* ── Network list ── */
+    .network-list { display: flex; flex-direction: column; gap: 4px; }
+    .net-item {
+      padding: 8px 10px; border: 1px solid var(--border2); border-radius: 3px;
+      background: var(--bg3); cursor: pointer;
+    }
+    .net-item:hover { border-color: var(--text5); }
+    .net-item.expanded { border-color: var(--text4); }
+    .net-row   { display: flex; align-items: center; gap: 8px; }
+    .net-ssid  { flex: 1; font-size: 0.8em; }
+    .net-meta  { display: flex; align-items: center; gap: 7px; }
+    .lock-icon { font-size: 0.7em; color: var(--text4); }
+    .saved-tag {
+      font-size: 0.55em; letter-spacing: 1px; padding: 1px 5px;
+      border: 1px solid var(--border2); border-radius: 2px; color: var(--text5);
+    }
+    .net-form  { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .net-form input {
+      flex: 1; min-width: 140px; padding: 5px 8px;
+      background: var(--bg); border: 1px solid var(--border2); border-radius: 3px;
+      color: var(--text); font-family: inherit; font-size: 0.75em;
+    }
+    .net-form input:focus { outline: none; border-color: var(--text4); }
+
+    /* ── Saved list ── */
+    .saved-list { display: flex; flex-direction: column; gap: 4px; }
+    .saved-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 10px; border: 1px solid var(--border2); border-radius: 3px;
+      background: var(--bg3);
+    }
+    .saved-name { flex: 1; font-size: 0.78em; }
+
+    /* ── Warning banner ── */
+    .warn-banner {
+      font-size: 0.72em; color: var(--warn); background: #1a1400; border: 1px solid #3a3000;
+      border-radius: 3px; padding: 8px 12px; margin-top: 8px; display: none;
+    }
+    .warn-banner.visible { display: block; }
+
+    /* ── Update log ── */
+    .upd-log {
+      background: #070707; border: 1px solid var(--border); border-radius: 3px;
+      padding: 10px; font-size: 0.65em; line-height: 1.5; color: var(--text3);
+      max-height: 200px; overflow-y: auto; white-space: pre-wrap; margin-top: 8px; display: none;
+    }
+    .upd-log.visible { display: block; }
+
+    /* ── Separator ── */
+    .sep { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+
+    /* ── Spinner ── */
+    .spinner {
+      display: inline-block; width: 10px; height: 10px;
+      border: 2px solid var(--border); border-top-color: var(--text3);
+      border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .msg { font-size: 0.7em; margin-top: 6px; min-height: 1.2em; }
+    .msg.ok   { color: var(--ok); }
+    .msg.err  { color: var(--dead); }
+
+    @media (max-width: 480px) {
+      .header-right { gap: 8px; }
+      a.nav-link { font-size: 0.65em; padding: 4px 10px; }
+    }
+  </style>
+</head>
+<body>
+<div class="header">
+  <span class="header-title">PULSE</span>
+  <div class="header-right">
+    <a href="/" class="nav-link">MONITOR</a>
+    <a href="/bags" class="nav-link">BAGS</a>
+    <a href="/settings" class="nav-link active">SETTINGS</a>
+  </div>
+</div>
+
+<div class="tab-bar">
+  <button class="tab active" id="btn-tab-wifi"   onclick="showTab('wifi')">WIFI</button>
+  <button class="tab"        id="btn-tab-system" onclick="showTab('system')">SYSTEM</button>
+</div>
+
+<!-- ═══════════════════════ WiFi tab ═══════════════════════════════════════ -->
+<div id="tab-wifi" class="tab-content active">
+
+  <!-- Status card -->
+  <div class="card">
+    <div class="card-title">STATUS</div>
+    <div class="status-row" id="wifi-status-row">
+      <span class="mode-badge mode-disconnected" id="mode-badge">—</span>
+      <span class="status-detail" id="status-ssid"></span>
+      <span class="status-detail" id="status-ip"></span>
+      <span class="signal-bars" id="status-signal"></span>
+      <span class="inet-dot no" id="status-inet" title="Internet"></span>
+    </div>
+    <div id="status-msg" class="msg" style="margin-top:8px;"></div>
+  </div>
+
+  <!-- Actions -->
+  <div style="display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
+    <button class="btn btn-primary" id="btn-scan" onclick="startScan()">SCAN</button>
+    <button class="btn btn-warn"    id="btn-ap"   onclick="switchToAP()">CREATE AP</button>
+  </div>
+
+  <!-- Scan results -->
+  <div class="card" id="card-networks" style="display:none;">
+    <div class="card-title">AVAILABLE NETWORKS</div>
+    <div class="network-list" id="network-list"></div>
+  </div>
+
+  <!-- Warning for AP→CLIENT transition -->
+  <div class="warn-banner" id="conn-warning">
+    Will disconnect from AP. Reconnect via <b>pulse.local:3000</b> or check IP on CYD display.
+  </div>
+
+  <!-- Saved connections -->
+  <div class="card" id="card-saved" style="display:none;">
+    <div class="card-title">SAVED NETWORKS</div>
+    <div class="saved-list" id="saved-list"></div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════ System tab ════════════════════════════════════ -->
+<div id="tab-system" class="tab-content">
+
+  <div class="card">
+    <div class="card-title">UPDATE</div>
+    <div style="display:flex; gap:8px; align-items:center;">
+      <button class="btn btn-primary" id="btn-update" onclick="startUpdate()">↑ UPDATE</button>
+      <span id="upd-status" class="msg"></span>
+    </div>
+    <pre class="upd-log" id="upd-log"></pre>
+  </div>
+
+  <div class="card">
+    <div class="card-title">SYSTEM</div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn btn-danger" onclick="confirmShutdown()">⏻ SHUTDOWN</button>
+    </div>
+    <div id="sys-msg" class="msg"></div>
+  </div>
+
+</div>
+
+<script>
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function showTab(name) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-bar button').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.getElementById('btn-tab-' + name).classList.add('active');
+}
+
+// ── Signal bars ───────────────────────────────────────────────────────────────
+function signalBars(pct) {
+  const lit = pct >= 70 ? 4 : pct >= 45 ? 3 : pct >= 20 ? 2 : 1;
+  return [1,2,3,4].map(i => `<span class="${i<=lit?'lit':''}"></span>`).join('');
+}
+
+// ── WiFi status ───────────────────────────────────────────────────────────────
+let _wifiStatus = {};
+
+function renderStatus(s) {
+  _wifiStatus = s;
+  const badge = document.getElementById('mode-badge');
+  badge.textContent = s.mode.toUpperCase();
+  badge.className = 'mode-badge mode-' + s.mode;
+  document.getElementById('status-ssid').textContent = s.ssid ? `"${s.ssid}"` : '';
+  document.getElementById('status-ip').textContent   = s.ip   ? s.ip : '';
+  const sig = document.getElementById('status-signal');
+  sig.innerHTML = (s.signal != null) ? signalBars(s.signal) : '';
+  const dot = document.getElementById('status-inet');
+  dot.className = 'inet-dot' + (s.internet ? '' : ' no');
+  dot.title = s.internet ? 'Internet: OK' : 'Internet: no';
+
+  // AP button: only show if in client mode
+  document.getElementById('btn-ap').style.display = (s.mode === 'client') ? '' : 'none';
+
+  // Saved list
+  const savedCard = document.getElementById('card-saved');
+  if (s.saved && s.saved.length > 0) {
+    savedCard.style.display = '';
+    const ul = document.getElementById('saved-list');
+    ul.innerHTML = s.saved.map(name =>
+      `<div class="saved-item">
+        <span class="saved-name">${esc(name)}</span>
+        <button class="btn btn-danger" onclick="deleteSaved('${esc(name)}')">✕</button>
+      </div>`
+    ).join('');
+  } else {
+    savedCard.style.display = 'none';
+  }
+}
+
+async function refreshStatus() {
+  try {
+    const r = await fetch('/api/wifi/status');
+    renderStatus(await r.json());
+  } catch (e) {}
+}
+
+// ── Scan ──────────────────────────────────────────────────────────────────────
+async function startScan() {
+  const btn = document.getElementById('btn-scan');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> SCANNING';
+  const card = document.getElementById('card-networks');
+  card.style.display = '';
+  document.getElementById('network-list').innerHTML = '<div style="font-size:.7em;color:var(--text4)">Scanning…</div>';
+  try {
+    const r = await fetch('/api/wifi/scan');
+    const data = await r.json();
+    if (data.ok) renderNetworks(data.networks);
+    else document.getElementById('network-list').innerHTML =
+      `<div class="msg err">${esc(data.msg)}</div>`;
+  } catch (e) {
+    document.getElementById('network-list').innerHTML = `<div class="msg err">Scan failed</div>`;
+  }
+  btn.disabled = false;
+  btn.textContent = 'SCAN';
+}
+
+function renderNetworks(nets) {
+  const ul = document.getElementById('network-list');
+  if (!nets.length) {
+    ul.innerHTML = '<div style="font-size:.7em;color:var(--text4)">No networks found</div>';
+    return;
+  }
+  ul.innerHTML = nets.map(n => `
+    <div class="net-item" id="net-${esc(n.ssid)}" onclick="toggleNet(this,'${esc(n.ssid)}','${n.security?'1':''}')">
+      <div class="net-row">
+        <div class="net-ssid">${esc(n.ssid)}</div>
+        <div class="net-meta">
+          <span class="signal-bars">${signalBars(n.signal)}</span>
+          ${n.security ? '<span class="lock-icon">🔒</span>' : ''}
+          ${n.saved ? '<span class="saved-tag">SAVED</span>' : ''}
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function toggleNet(el, ssid, needsPass) {
+  // Collapse any other open form
+  document.querySelectorAll('.net-item.expanded').forEach(other => {
+    if (other !== el) {
+      other.classList.remove('expanded');
+      const f = other.querySelector('.net-form');
+      if (f) f.remove();
+    }
+  });
+  if (el.classList.contains('expanded')) {
+    el.classList.remove('expanded');
+    const f = el.querySelector('.net-form');
+    if (f) f.remove();
+    return;
+  }
+  el.classList.add('expanded');
+  const form = document.createElement('div');
+  form.className = 'net-form';
+  const showWarning = _wifiStatus.mode === 'ap';
+  form.innerHTML = `
+    ${needsPass ? `<input type="password" id="pw-${esc(ssid)}" placeholder="Password" autocomplete="off">` : ''}
+    <button class="btn btn-primary" onclick="connectNet('${esc(ssid)}','${needsPass?'1':''}');event.stopPropagation()">CONNECT</button>
+    <div class="msg" id="conn-msg-${esc(ssid)}"></div>
+  `;
+  el.appendChild(form);
+  if (showWarning) document.getElementById('conn-warning').classList.add('visible');
+  else document.getElementById('conn-warning').classList.remove('visible');
+}
+
+async function connectNet(ssid, needsPass) {
+  const pw = needsPass ? (document.getElementById('pw-' + ssid) || {}).value || '' : '';
+  const msgEl = document.getElementById('conn-msg-' + ssid);
+  if (msgEl) { msgEl.className = 'msg'; msgEl.innerHTML = '<span class="spinner"></span> Connecting…'; }
+  document.getElementById('btn-scan').disabled = true;
+  try {
+    const r = await fetch('/api/wifi/connect', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ssid, password: pw})
+    });
+    const data = await r.json();
+    if (msgEl) {
+      msgEl.className = 'msg ' + (data.ok ? 'ok' : 'err');
+      msgEl.textContent = data.ok ? `Connected. IP: ${data.ip || '?'}` : data.msg;
+    }
+    if (data.ok) {
+      document.getElementById('conn-warning').classList.remove('visible');
+      refreshStatus();
+    }
+  } catch (e) {
+    if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = 'Request failed'; }
+  }
+  document.getElementById('btn-scan').disabled = false;
+}
+
+// ── Create AP ─────────────────────────────────────────────────────────────────
+async function switchToAP() {
+  const btn = document.getElementById('btn-ap');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  const msgEl = document.getElementById('status-msg');
+  msgEl.className = 'msg'; msgEl.textContent = 'Switching to AP…';
+  try {
+    const r = await fetch('/api/wifi/ap', {method: 'POST'});
+    const data = await r.json();
+    msgEl.className = 'msg ' + (data.ok ? 'ok' : 'err');
+    msgEl.textContent = data.ok ? `AP active. IP: ${data.ip}` : data.msg;
+    if (data.ok) refreshStatus();
+  } catch (e) {
+    msgEl.className = 'msg err'; msgEl.textContent = 'Request failed';
+  }
+  btn.disabled = false;
+  btn.textContent = 'CREATE AP';
+}
+
+// ── Delete saved ──────────────────────────────────────────────────────────────
+async function deleteSaved(name) {
+  if (!confirm(`Delete saved network "${name}"?`)) return;
+  const r = await fetch('/api/wifi/network/' + encodeURIComponent(name), {method: 'DELETE'});
+  const data = await r.json();
+  if (data.ok) refreshStatus();
+  else alert(data.msg);
+}
+
+// ── System: Update ────────────────────────────────────────────────────────────
+let _updEvtSrc = null;
+
+async function startUpdate() {
+  document.getElementById('btn-update').disabled = true;
+  const st = document.getElementById('upd-status');
+  st.className = 'msg'; st.innerHTML = '<span class="spinner"></span> Starting…';
+  const log = document.getElementById('upd-log');
+  log.textContent = '';
+  log.classList.add('visible');
+
+  try {
+    await fetch('/api/system/update', {method: 'POST'});
+  } catch (e) {}
+
+  if (_updEvtSrc) _updEvtSrc.close();
+  _updEvtSrc = new EventSource('/api/system/update/log');
+  _updEvtSrc.onmessage = ev => {
+    log.textContent += ev.data + '\n';
+    log.scrollTop = log.scrollHeight;
+    if (ev.data.includes('UPDATE_DONE') || ev.data.includes('Error')) {
+      _updEvtSrc.close();
+      st.className = 'msg ok'; st.textContent = 'Done';
+      document.getElementById('btn-update').disabled = false;
+    }
+  };
+  _updEvtSrc.onerror = () => {
+    st.className = 'msg err'; st.textContent = 'Stream error';
+    document.getElementById('btn-update').disabled = false;
+  };
+}
+
+// ── System: Shutdown ──────────────────────────────────────────────────────────
+async function confirmShutdown() {
+  if (!confirm('Shut down the Pi?')) return;
+  const msg = document.getElementById('sys-msg');
+  msg.className = 'msg'; msg.innerHTML = '<span class="spinner"></span> Shutting down…';
+  try {
+    await fetch('/api/shutdown', {method: 'POST'});
+    msg.className = 'msg ok'; msg.textContent = 'Shutdown initiated.';
+  } catch (e) {
+    msg.className = 'msg err'; msg.textContent = 'Request failed';
+  }
+}
+
+// ── Escape helper ─────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+refreshStatus();
+setInterval(refreshStatus, 15000);
+</script>
+</body>
+</html>

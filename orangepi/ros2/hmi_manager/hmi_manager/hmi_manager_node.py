@@ -17,6 +17,7 @@ Usage:
 import json
 import os
 import shutil
+import subprocess
 import threading
 import time
 
@@ -49,6 +50,10 @@ class HmiManagerNode(Node):
         # Bridge status cache — populated from /hmi_bridge/status
         self._bridge: dict = {}
         self._bridge_time: float = 0.0
+        # WiFi status cache (refresh every 10 s — nmcli is slow)
+        self._wifi_ip:   str   = ''
+        self._wifi_mode: str   = 'disconnected'
+        self._wifi_ts:   float = 0.0
 
         # Publisher → hmi_bridge command bus
         self._cmd_pub = self.create_publisher(String, '/hmi_bridge/cmd', 10)
@@ -137,6 +142,43 @@ class HmiManagerNode(Node):
         import subprocess
         subprocess.Popen('echo openclaw | sudo -S shutdown -h now', shell=True)
 
+    # ── WiFi helpers ──────────────────────────────────────────────────────────
+
+    def _refresh_wifi(self):
+        """Refresh cached WiFi status via nmcli (called at most every 10 s)."""
+        try:
+            r = subprocess.run(
+                ['nmcli', '-t', '-f', 'NAME,TYPE', 'con', 'show', '--active'],
+                capture_output=True, text=True, timeout=5
+            )
+            mode = 'disconnected'
+            for line in r.stdout.splitlines():
+                parts = line.split(':')
+                if len(parts) >= 2 and parts[1] in ('802-11-wireless', 'wifi'):
+                    mode = 'ap' if parts[0] == 'hotspot' else 'client'
+                    break
+            self._wifi_mode = mode
+
+            ip = ''
+            r2 = subprocess.run(
+                ['nmcli', '-t', '-f', 'IP4.ADDRESS', 'dev', 'show', 'wlan0'],
+                capture_output=True, text=True, timeout=5
+            )
+            for line in r2.stdout.splitlines():
+                parts = line.split(':')
+                if len(parts) >= 2 and parts[0].startswith('IP4.ADDRESS') and '/' in parts[-1]:
+                    ip = parts[-1].split('/')[0]
+                    break
+            self._wifi_ip = ip
+        except Exception:
+            pass
+
+    def _get_wifi(self) -> tuple[str, str]:
+        if time.monotonic() - self._wifi_ts > 10.0:
+            self._refresh_wifi()
+            self._wifi_ts = time.monotonic()
+        return self._wifi_ip, self._wifi_mode
+
     # ── Status sender ─────────────────────────────────────────────────────────
 
     def _send_status(self):
@@ -144,6 +186,7 @@ class HmiManagerNode(Node):
             b = dict(self._bridge)
             fresh = (time.monotonic() - self._bridge_time) < 3.0 and bool(b)
 
+        wifi_ip, wifi_mode = self._get_wifi()
         if fresh:
             status = {
                 'sensors_running': b.get('sensors_running', False),
@@ -155,6 +198,8 @@ class HmiManagerNode(Node):
                 'disk_gb':         b.get('disk_gb', 0.0),
                 'rec_duration':    b.get('rec_duration', 0),
                 'bag_name':        b.get('bag_name', ''),
+                'wifi_ip':         wifi_ip,
+                'wifi_mode':       wifi_mode,
             }
         else:
             status = {
@@ -163,6 +208,8 @@ class HmiManagerNode(Node):
                 'lidar_ok': False, 'imu_ok': False,
                 'recording': False, 'disk_gb': 0.0,
                 'rec_duration': 0, 'bag_name': '',
+                'wifi_ip':   wifi_ip,
+                'wifi_mode': wifi_mode,
             }
 
         if self._serial and self._serial.is_open:
