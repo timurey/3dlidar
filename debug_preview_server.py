@@ -65,6 +65,65 @@ def api_bag_preview(name):
     return resp
 
 
+@app.route('/api/bags/<name>/export')
+def api_bag_export(name):
+    if not _valid(name):
+        return jsonify({'ok': False, 'msg': 'Invalid name'}), 400
+    bag_path = os.path.join(BAG_DIR, name)
+    if not os.path.isdir(bag_path):
+        return jsonify({'ok': False, 'msg': 'Bag not found'}), 404
+
+    fmt = request.args.get('fmt', 'e57').lower()
+    if fmt not in ('e57', 'xyz', 'las'):
+        fmt = 'e57'
+    max_points       = max(1000, min(request.args.get('max_points', 1_000_000, type=int), 5_000_000))
+    target_rotations = max(1.0,  min(request.args.get('target_rotations', 10.0, type=float), 60.0))
+
+    try:
+        from bag_preview import build_bag_preview
+        result = build_bag_preview(bag_path, max_clouds=200, max_points=max_points,
+                                   target_rotations=target_rotations)
+    except (FileNotFoundError, ValueError) as e:
+        return jsonify({'ok': False, 'msg': str(e)}), 400
+    except Exception as e:
+        return jsonify({'ok': False, 'msg': f'Export failed: {e}'}), 500
+
+    import numpy as np, io, tempfile
+    pts = np.frombuffer(result['buf'], dtype=np.float32).reshape(-1, 3)
+
+    if fmt == 'e57':
+        try:
+            import pye57
+            tmp = tempfile.NamedTemporaryFile(suffix='.e57', delete=False)
+            tmp.close()
+            e57 = pye57.E57(tmp.name, mode='w')
+            e57.write_scan_raw({
+                'cartesianX': pts[:, 0].astype(np.float64),
+                'cartesianY': pts[:, 1].astype(np.float64),
+                'cartesianZ': pts[:, 2].astype(np.float64),
+            })
+            e57.close()
+            with open(tmp.name, 'rb') as f:
+                data = f.read()
+            os.unlink(tmp.name)
+            return app.response_class(
+                data, mimetype='application/octet-stream',
+                headers={'Content-Disposition': f'attachment; filename="{name}.e57"',
+                         'X-Point-Count': str(len(pts))})
+        except ImportError:
+            fmt = 'xyz'
+
+    if fmt == 'xyz':
+        buf = io.BytesIO()
+        np.savetxt(buf, pts, fmt='%.4f', delimiter=' ')
+        return app.response_class(
+            buf.getvalue(), mimetype='text/plain',
+            headers={'Content-Disposition': f'attachment; filename="{name}.xyz"',
+                     'X-Point-Count': str(len(pts))})
+
+    return jsonify({'ok': False, 'msg': 'Unknown format'}), 400
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
     print(f'Preview server → http://localhost:{port}/preview/<bag_name>')

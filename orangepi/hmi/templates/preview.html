@@ -232,6 +232,14 @@
     <button class="btn-mini" id="btn-deskew-toggle" onclick="toggleDeskew()">&#9783; Deskew</button>
     <button class="btn-mini" id="btn-more-detail" onclick="loadMoreDetail()">&#8853; More Detail</button>
     <button class="btn-mini" onclick="resetView()">&#8635;</button>
+    <div class="ctrl-group" style="margin-left:4px">
+      <select id="export-fmt" class="btn-mini" style="padding:2px 4px;cursor:pointer">
+        <option value="e57">E57</option>
+        <option value="xyz">XYZ</option>
+        <option value="las">LAS</option>
+      </select>
+      <button class="btn-mini" id="btn-export" onclick="startExport()" title="Export point cloud">&#8659; Export</button>
+    </div>
   </div>
 
 <script>
@@ -900,6 +908,40 @@
       target_rotations: Math.min(DETAIL_CAP.target_rotations, +(currentReq.target_rotations * 1.6).toFixed(2)),
     };
     return fetchPreview();
+  }
+
+  function startExport() {
+    const fmt = document.getElementById('export-fmt').value;
+    const btn = document.getElementById('btn-export');
+    btn.disabled = true;
+    btn.textContent = '⏳ Exporting…';
+    // Use full-quality params for export
+    const url = `/api/bags/${encodeURIComponent(BAG_NAME)}/export` +
+                `?fmt=${encodeURIComponent(fmt)}&max_points=1000000&target_rotations=10`;
+    fetch(url)
+      .then(r => {
+        if (!r.ok) return r.json().then(d => { throw new Error(d.msg || r.statusText); });
+        return r.blob().then(blob => ({ blob, r }));
+      })
+      .then(({ blob, r }) => {
+        const ext = fmt;
+        const cd  = r.headers.get('Content-Disposition') || '';
+        const fnMatch = cd.match(/filename="([^"]+)"/);
+        const filename = fnMatch ? fnMatch[1] : `${BAG_NAME}.${ext}`;
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        const pts = r.headers.get('X-Point-Count');
+        btn.textContent = pts ? `✓ ${(+pts/1000).toFixed(0)}k pts` : '✓ Done';
+        setTimeout(() => { btn.textContent = '↙ Export'; btn.disabled = false; }, 3000);
+      })
+      .catch(err => {
+        btn.textContent = '✗ Error';
+        btn.title = String(err);
+        setTimeout(() => { btn.textContent = '↙ Export'; btn.disabled = false; btn.title='Export point cloud'; }, 4000);
+      });
   }
 
   function updateMoreDetailButton() {

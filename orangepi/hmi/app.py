@@ -962,6 +962,95 @@ def api_bag_preview(name):
     return resp
 
 
+@app.route('/api/bags/<name>/export')
+def api_bag_export(name):
+    """Export full-quality point cloud as E57 (or XYZ if pye57 missing).
+
+    Query params:
+      fmt=e57|xyz  (default: e57)
+      max_points   (default: 1000000)
+      target_rotations (default: 10)
+    """
+    if not sanitize_bag_name(name):
+        return jsonify({'ok': False, 'msg': 'Invalid name'}), 400
+    bag_path = os.path.join(BAG_DIR, name)
+    if not os.path.isdir(bag_path):
+        return jsonify({'ok': False, 'msg': 'Bag not found'}), 404
+
+    fmt = request.args.get('fmt', 'e57').lower()
+    if fmt not in ('e57', 'xyz', 'las'):
+        fmt = 'e57'
+    max_points       = max(1000, min(request.args.get('max_points', 1_000_000, type=int), 5_000_000))
+    target_rotations = max(1.0,  min(request.args.get('target_rotations', 10.0, type=float), 60.0))
+
+    try:
+        from bag_preview import build_bag_preview
+        result = build_bag_preview(bag_path,
+                                   max_clouds=200,
+                                   max_points=max_points,
+                                   target_rotations=target_rotations)
+    except (FileNotFoundError, ValueError) as e:
+        return jsonify({'ok': False, 'msg': str(e)}), 400
+    except Exception as e:
+        return jsonify({'ok': False, 'msg': f'Export failed: {e}'}), 500
+
+    import numpy as np
+    pts = np.frombuffer(result['buf'], dtype=np.float32).reshape(-1, 3)
+
+    import io, tempfile
+    if fmt == 'e57':
+        try:
+            import pye57
+            tmp = tempfile.NamedTemporaryFile(suffix='.e57', delete=False)
+            tmp.close()
+            e57 = pye57.E57(tmp.name, mode='w')
+            e57.write_scan_raw({
+                'cartesianX': pts[:, 0].astype(np.float64),
+                'cartesianY': pts[:, 1].astype(np.float64),
+                'cartesianZ': pts[:, 2].astype(np.float64),
+            })
+            e57.close()
+            with open(tmp.name, 'rb') as f:
+                data = f.read()
+            os.unlink(tmp.name)
+            return app.response_class(
+                data, mimetype='application/octet-stream',
+                headers={'Content-Disposition': f'attachment; filename="{name}.e57"',
+                         'X-Point-Count': str(len(pts))})
+        except ImportError:
+            fmt = 'xyz'  # fall through to XYZ
+
+    if fmt == 'xyz':
+        buf = io.BytesIO()
+        np.savetxt(buf, pts, fmt='%.4f', delimiter=' ')
+        return app.response_class(
+            buf.getvalue(), mimetype='text/plain',
+            headers={'Content-Disposition': f'attachment; filename="{name}.xyz"',
+                     'X-Point-Count': str(len(pts))})
+
+    if fmt == 'las':
+        try:
+            import laspy
+            header = laspy.LasHeader(point_format=0, version='1.4')
+            offset = pts.mean(axis=0).astype(np.float64)
+            header.offsets = offset
+            header.scales  = np.array([0.001, 0.001, 0.001])
+            las = laspy.LasData(header=header)
+            las.x = pts[:, 0].astype(np.float64)
+            las.y = pts[:, 1].astype(np.float64)
+            las.z = pts[:, 2].astype(np.float64)
+            buf = io.BytesIO()
+            las.write(buf)
+            return app.response_class(
+                buf.getvalue(), mimetype='application/octet-stream',
+                headers={'Content-Disposition': f'attachment; filename="{name}.las"',
+                         'X-Point-Count': str(len(pts))})
+        except ImportError:
+            return jsonify({'ok': False, 'msg': 'laspy not installed on Pi'}), 500
+
+    return jsonify({'ok': False, 'msg': 'Unknown format'}), 400
+
+
 @app.route('/api/lidar/spindle', methods=['GET', 'POST'])
 def lidar_spindle():
     if request.method == 'GET':
