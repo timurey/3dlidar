@@ -17,7 +17,7 @@ Mac — постобработка: deskew, ICP, экспорт в CAD.
 │  Ethernet ←──── Velodyne VLP-16 (UDP :2368)                  │
 │  UART0    ←──── RP2040 (230400 baud, 100 Hz)                 │
 │  UART1    ←──── CYD ESP32 (115200 baud)                      │
-│  USB      ←──── IMU (Yahboom N100)                           │
+│  USB      ←──── IMU (Yahboom 9-axis)                         │
 └─────────────────────────────────────────────────────────────┘
          │                    │
          ▼                    ▼
@@ -40,7 +40,7 @@ Mac — постобработка: deskew, ICP, экспорт в CAD.
 | Редуктор            | 5:1                      | Мотор 200 RPM → платформа 40 RPM        |
 | Датчик угла         | AS5600 (I2C)             | Магнитный энкодер, абсолютный угол      |
 | HMI                 | CYD ESP32-2432S028R      | Touchscreen панель управления           |
-| IMU                 | Wheeltec N100            | Угловое ускорение, /imu/data            |
+| IMU                 | Yahboom 9-axis IMU       | 9DOF (используется в 6-axis режиме — без магнетометра, помехи от мотора); пакет `imu_ros2_device` |
 | Аккумулятор         | 1P10S (42 В)             | От гироскутера                          |
 
 ---
@@ -195,7 +195,8 @@ GPIO 1/3 (P5) нельзя — CH340C держит GPIO3 HIGH даже без US
 | `/velodyne_points`             | `sensor_msgs/PointCloud2` | VLP-16 driver      |
 | `/rotating_platform/angle`     | `std_msgs/Float64`        | spin_controller    |
 | `/rotating_platform/joint_state` | `sensor_msgs/JointState` | spin_controller    |
-| `/imu/data`                    | `sensor_msgs/Imu`         | wheeltec N100      |
+| `/imu`                         | `sensor_msgs/Imu`         | Yahboom 9-axis IMU (`imu_ros2_device`) |
+| `/imu/mag`                     | `sensor_msgs/MagneticField` | Yahboom 9-axis IMU (магнетометр) |
 
 ### TF дерево
 
