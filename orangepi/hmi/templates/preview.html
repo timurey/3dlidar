@@ -134,6 +134,20 @@
     .btn-deskew-reset:hover { color: var(--text2); border-color: var(--border); }
     .deskew-dirty { color: #3399cc !important; border-color: #226688 !important; }
 
+    /* ── ViewCube ── */
+    .vc-wrap {
+      position: absolute; top: 8px; right: 8px;
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+      z-index: 10; pointer-events: none; user-select: none;
+    }
+    .vc-home {
+      pointer-events: auto; background: none; border: none;
+      color: var(--text3); font-size: 17px; cursor: pointer; padding: 2px 5px;
+      line-height: 1; -webkit-tap-highlight-color: transparent;
+    }
+    .vc-home:hover { color: var(--text); }
+    #vc-canvas { pointer-events: auto; display: block; width: 160px !important; height: 160px !important; background: transparent; cursor: grab; }
+
     @media (max-width: 768px) {
       html, body { font-size: 16px; }
       .header-title { font-size: 0.65em; }
@@ -157,6 +171,10 @@
     <canvas id="gl"></canvas>
     <div class="stats-panel hidden" id="stats"></div>
     <div class="overlay-msg" id="msg">Loading&hellip;</div>
+    <div class="vc-wrap">
+      <button class="vc-home" title="Home view" onclick="resetView()">⌂</button>
+      <canvas id="vc-canvas" width="160" height="160"></canvas>
+    </div>
   </div>
 
   <!-- Deskew tuning (axis tilt correction) -->
@@ -196,6 +214,9 @@
     <div class="ctrl-group">
       <button class="btn-mini active" id="btn-color-height" onclick="setColorMode(0)">Height</button>
       <button class="btn-mini" id="btn-color-range" onclick="setColorMode(1)">Range</button>
+    </div>
+    <div class="ctrl-group">
+      <button class="btn-mini" id="btn-axes" onclick="toggleAxes()" title="Show origin axes">Axes</button>
     </div>
     <div class="ctrl-group">
       <span class="dim">Size</span>
@@ -266,11 +287,13 @@
     uniform float uValMin;
     uniform float uValMax;
     uniform vec3 uCenter;
+    uniform float uPreAligned;
     varying float vT;
     void main() {
-      // Rig frame: X=radial(rotation axis), Y=lateral(left), Z=up
-      // WebGL world: X=right(-Y), Y=up(Z), Z=depth(X)
-      vec3 wp = vec3(-aPos.y, aPos.z, aPos.x);
+      // Rig frame: X=rotation axis (vertical), Y=lateral, Z=radial
+      // If uPreAligned=1: buffer already in WebGL world (Y=up), no remap needed.
+      // Otherwise remap rig→world: worldX=rigY, worldY=rigX(up), worldZ=rigZ
+      vec3 wp = (uPreAligned > 0.5) ? aPos : vec3(aPos.y, aPos.x, aPos.z);
       vec4 viewPos = uView * vec4(wp, 1.0);
       gl_Position = uProj * viewPos;
       float val = (uColorMode < 0.5) ? wp.y : length(wp - uCenter);
@@ -327,10 +350,84 @@
       uColorMode: gl.getUniformLocation(prog, 'uColorMode'),
       uValMin:    gl.getUniformLocation(prog, 'uValMin'),
       uValMax:    gl.getUniformLocation(prog, 'uValMax'),
-      uCenter:    gl.getUniformLocation(prog, 'uCenter'),
+      uCenter:      gl.getUniformLocation(prog, 'uCenter'),
+      uPreAligned:  gl.getUniformLocation(prog, 'uPreAligned'),
     };
     posBuf = gl.createBuffer();
     gl.enable(gl.DEPTH_TEST);
+  }
+
+  // ── Axis-lines program ───────────────────────────────────────────────────
+  const AXIS_VERT = `
+    attribute vec3 aPos;
+    attribute vec3 aColor;
+    uniform mat4 uView;
+    uniform mat4 uProj;
+    varying vec3 vColor;
+    void main() {
+      gl_Position = uProj * uView * vec4(aPos, 1.0);
+      vColor = aColor;
+    }
+  `;
+  const AXIS_FRAG = `
+    precision mediump float;
+    varying vec3 vColor;
+    void main() { gl_FragColor = vec4(vColor, 1.0); }
+  `;
+  let axisProg, axisLocs, axisBuf;
+  let showAxes = false;
+  if (gl) {
+    axisProg = gl.createProgram();
+    gl.attachShader(axisProg, compileShader(gl.VERTEX_SHADER,   AXIS_VERT));
+    gl.attachShader(axisProg, compileShader(gl.FRAGMENT_SHADER, AXIS_FRAG));
+    gl.linkProgram(axisProg);
+    axisLocs = {
+      aPos:   gl.getAttribLocation(axisProg, 'aPos'),
+      aColor: gl.getAttribLocation(axisProg, 'aColor'),
+      uView:  gl.getUniformLocation(axisProg, 'uView'),
+      uProj:  gl.getUniformLocation(axisProg, 'uProj'),
+    };
+    axisBuf = gl.createBuffer();
+  }
+
+  function buildAxesBuffer(scale) {
+    // 3 axes × 2 endpoints × (xyz + rgb) = 36 floats
+    // World frame: X=right(worldX), Y=up(worldY), Z=depth(worldZ)
+    return new Float32Array([
+      // X axis — red
+      0, 0, 0,  1, 0.15, 0.15,
+      scale, 0, 0,  1, 0.15, 0.15,
+      // Y axis — green (up)
+      0, 0, 0,  0.15, 1, 0.15,
+      0, scale, 0,  0.15, 1, 0.15,
+      // Z axis — blue (depth)
+      0, 0, 0,  0.3, 0.5, 1,
+      0, 0, scale,  0.3, 0.5, 1,
+    ]);
+  }
+
+  function toggleAxes() {
+    showAxes = !showAxes;
+    document.getElementById('btn-axes').classList.toggle('active', showAxes);
+    draw();
+  }
+
+  function drawAxes(proj, view, scale) {
+    if (!axisProg || !cloud) return;
+    const data = buildAxesBuffer(scale);
+    gl.useProgram(axisProg);
+    gl.bindBuffer(gl.ARRAY_BUFFER, axisBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+    const stride = 6 * 4;  // 6 floats × 4 bytes
+    gl.enableVertexAttribArray(axisLocs.aPos);
+    gl.vertexAttribPointer(axisLocs.aPos,   3, gl.FLOAT, false, stride, 0);
+    gl.enableVertexAttribArray(axisLocs.aColor);
+    gl.vertexAttribPointer(axisLocs.aColor, 3, gl.FLOAT, false, stride, 3 * 4);
+    gl.uniformMatrix4fv(axisLocs.uProj, false, proj);
+    gl.uniformMatrix4fv(axisLocs.uView, false, view);
+    gl.lineWidth(2);
+    gl.drawArrays(gl.LINES, 0, 6);
+    gl.disableVertexAttribArray(axisLocs.aColor);
   }
 
   // ── Minimal mat4 (column-major, matches WebGL convention) ────────────────
@@ -366,8 +463,8 @@
   }
 
   // ── Camera (spherical orbit around a target, world +Y up) ─────────────────
-  // World +Y = height (rawZ). Axis remap in vertex shader: wp = (-rawY, rawZ, rawX).
-  const cam = { yaw: Math.PI * 0.25, pitch: 0.45, radius: 10, target: [0, 0, 0] };
+  // World +Y = height. Rig frame: X=rotation axis(up), Y=lateral, Z=radial.
+  const cam = { yaw: -Math.PI * 0.25, pitch: 0.6, radius: 10, target: [0, 0, 0] };
   const _CAM_KEY = 'lumirion-cam-' + BAG_NAME;
 
   function saveCam() {
@@ -380,8 +477,9 @@
     try {
       const s = JSON.parse(localStorage.getItem(_CAM_KEY));
       if (s && typeof s.yaw === 'number' && isFinite(s.yaw)) {
-        cam.yaw = s.yaw; cam.pitch = s.pitch; cam.radius = s.radius;
-        cam.target = Array.isArray(s.target) ? s.target : [0,0,0];
+        cam.yaw = s.yaw; cam.pitch = s.pitch;
+        cam.radius = (s.radius > 0 && isFinite(s.radius)) ? s.radius : 10;
+        // target always re-centred on the actual cloud — stored value may be stale
         return true;
       }
     } catch(e) {}
@@ -438,6 +536,7 @@
     gl.uniformMatrix4fv(locs.uView, false, view);
     gl.uniform1f(locs.uPointSize, pointSize);
     gl.uniform1f(locs.uColorMode, colorMode);
+    gl.uniform1f(locs.uPreAligned, cloud.preAligned ? 1.0 : 0.0);
     gl.uniform3f(locs.uCenter, cloud.center[0], cloud.center[1], cloud.center[2]);
     if (colorMode === 0) {
       gl.uniform1f(locs.uValMin, cloud.upMin);
@@ -451,7 +550,342 @@
     gl.enableVertexAttribArray(locs.aPos);
     gl.vertexAttribPointer(locs.aPos, 3, gl.FLOAT, false, 0, 0);
     gl.drawArrays(gl.POINTS, 0, cloud.count);
+
+    if (showAxes) {
+      const axScale = (cloud.rMax || 1) * 0.4;
+      drawAxes(proj, view, axScale);
+    }
+    VC.render(cam.yaw, cam.pitch);
   }
+
+  // ── ViewCube ─────────────────────────────────────────────────────────────
+  const VC = (() => {
+    const vc = document.getElementById('vc-canvas');
+    if (!vc) return { render() {} };
+    const ctx2 = vc.getContext('2d');
+    const W = vc.width, H = vc.height;
+    const S = 0.72; // half-size of cube relative to canvas units
+
+    const VERTS = [
+      [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],
+      [-1,-1, 1],[1,-1, 1],[1,1, 1],[-1,1, 1],
+    ];
+    const FACES = [
+      { vi:[4,5,6,7], n:[0,0, 1], lbl:'FRONT',  fc:'#9ab8d8', snapYaw:0,              snapPit:0.05 },
+      { vi:[1,0,3,2], n:[0,0,-1], lbl:'BACK',   fc:'#7090b0', snapYaw:Math.PI,        snapPit:0.05 },
+      { vi:[7,6,2,3], n:[0, 1,0], lbl:'TOP',    fc:'#c8d8e8', snapYaw:0,              snapPit:Math.PI/2-0.01 },
+      { vi:[0,1,5,4], n:[0,-1,0], lbl:'BOTTOM', fc:'#6080a0', snapYaw:0,              snapPit:-(Math.PI/2-0.01) },
+      { vi:[5,1,2,6], n:[ 1,0,0], lbl:'RIGHT',  fc:'#85a8c8', snapYaw: Math.PI/2,    snapPit:0.05 },
+      { vi:[0,4,7,3], n:[-1,0,0], lbl:'LEFT',   fc:'#85a8c8', snapYaw:-Math.PI/2,    snapPit:0.05 },
+    ];
+    // All 12 cube edges: vertex pair + snap view angle
+    const EDGES = [
+      // Front face (z=+1) edges
+      { vi:[6,7], snapYaw: 0,              snapPit: Math.PI/4  }, // FRONT+TOP
+      { vi:[4,5], snapYaw: 0,              snapPit:-Math.PI/4  }, // FRONT+BOTTOM
+      { vi:[5,6], snapYaw: Math.PI/4,      snapPit: 0.05       }, // FRONT+RIGHT
+      { vi:[4,7], snapYaw:-Math.PI/4,      snapPit: 0.05       }, // FRONT+LEFT
+      // Back face (z=-1) edges
+      { vi:[2,3], snapYaw: Math.PI,        snapPit: Math.PI/4  }, // BACK+TOP
+      { vi:[0,1], snapYaw: Math.PI,        snapPit:-Math.PI/4  }, // BACK+BOTTOM
+      { vi:[1,2], snapYaw: Math.PI*3/4,    snapPit: 0.05       }, // BACK+RIGHT
+      { vi:[0,3], snapYaw:-Math.PI*3/4,    snapPit: 0.05       }, // BACK+LEFT
+      // Vertical edges (TOP↔BOTTOM side)
+      { vi:[2,6], snapYaw: Math.PI/2,      snapPit: Math.PI/4  }, // TOP+RIGHT
+      { vi:[3,7], snapYaw:-Math.PI/2,      snapPit: Math.PI/4  }, // TOP+LEFT
+      { vi:[1,5], snapYaw: Math.PI/2,      snapPit:-Math.PI/4  }, // BOTTOM+RIGHT
+      { vi:[0,4], snapYaw:-Math.PI/2,      snapPit:-Math.PI/4  }, // BOTTOM+LEFT
+    ];
+    const CORNERS = [
+      { vi:6, snapYaw: Math.PI/4,    snapPit:0.55 }, // FRONT+TOP+RIGHT
+      { vi:7, snapYaw:-Math.PI/4,    snapPit:0.55 }, // FRONT+TOP+LEFT
+      { vi:5, snapYaw: Math.PI/4,    snapPit:-0.45 }, // FRONT+BOT+RIGHT
+      { vi:4, snapYaw:-Math.PI/4,    snapPit:-0.45 }, // FRONT+BOT+LEFT
+      { vi:2, snapYaw: Math.PI*3/4,  snapPit:0.55 }, // BACK+TOP+RIGHT
+      { vi:3, snapYaw:-Math.PI*3/4,  snapPit:0.55 }, // BACK+TOP+LEFT
+      { vi:1, snapYaw: Math.PI*3/4,  snapPit:-0.45 }, // BACK+BOT+RIGHT
+      { vi:0, snapYaw:-Math.PI*3/4,  snapPit:-0.45 }, // BACK+BOT+LEFT
+    ];
+    // Labels match rig frame: worldX=rigY(lateral), worldY=rigZ(up), worldZ=rigX(depth)
+    // Rig frame (no TF): worldY = rig X (rotation axis = vertical)
+    const AXES_RIG = [
+      { d:[1.55,0,0], c:'#e03030', l:'Y' },  // worldX = rig Y (lateral)
+      { d:[0,1.55,0], c:'#2255ee', l:'X' },  // worldY = rig X (up)
+      { d:[0,0,1.55], c:'#22b022', l:'Z' },  // worldZ = rig Z (radial)
+    ];
+    // World frame (TF applied): worldY = world Z (up); _R_zup_to_yup swaps Z↔Y
+    const AXES_WORLD = [
+      { d:[1.55,0,0], c:'#e03030', l:'X' },  // worldX = ROS X
+      { d:[0,1.55,0], c:'#2255ee', l:'Z' },  // worldY = ROS Z (up)
+      { d:[0,0,1.55], c:'#22b022', l:'Y' },  // worldZ = -ROS Y
+    ];
+
+    let hov = null;
+
+    function basis(yaw, pitch) {
+      const cp = Math.cos(pitch), sp = Math.sin(pitch);
+      const cy = Math.cos(yaw),   sy = Math.sin(yaw);
+      // zAxis = normalize(eye) (eye-to-origin reversed)
+      const zx = sy*cp, zy = sp, zz = cy*cp;
+      // xAxis = normalize(worldUp × zAxis)
+      const rx0 = cy*cp, ry0 = 0, rz0 = -sy*cp;
+      const rl = Math.hypot(rx0, ry0, rz0) || 1;
+      const rx = rx0/rl, ry = ry0/rl, rz = rz0/rl;
+      // yAxis = zAxis × xAxis
+      const ux = zy*rz-zz*ry, uy = zz*rx-zx*rz, uz = zx*ry-zy*rx;
+      // eye at dist=3.5
+      const dist = 3.5;
+      return { ex:zx*dist, ey:zy*dist, ez:zz*dist,
+               fwdx:-zx, fwdy:-zy, fwdz:-zz,
+               rx, ry, rz, ux, uy, uz };
+    }
+
+    function prj(vx, vy, vz, b, fov) {
+      const dx = vx-b.ex, dy = vy-b.ey, dz = vz-b.ez;
+      const z = dx*b.fwdx + dy*b.fwdy + dz*b.fwdz;
+      if (z < 0.05) return null;
+      const x = dx*b.rx + dy*b.ry + dz*b.rz;
+      const y = dx*b.ux + dy*b.uy + dz*b.uz;
+      const s = fov / z;
+      return [W*0.5 + x*s, H*0.5 - y*s, z];
+    }
+
+    function dot3(ax,ay,az,bx,by,bz) { return ax*bx+ay*by+az*bz; }
+
+    function pInPoly(px, py, pts) {
+      let inside = false;
+      for (let i=0, j=pts.length-1; i<pts.length; j=i++) {
+        const xi=pts[i][0], yi=pts[i][1], xj=pts[j][0], yj=pts[j][1];
+        if (((yi>py)!==(yj>py)) && (px < (xj-xi)*(py-yi)/(yj-yi)+xi)) inside=!inside;
+      }
+      return inside;
+    }
+
+    function render(yaw, pitch) {
+      ctx2.clearRect(0, 0, W, H);
+      const b = basis(yaw, pitch);
+      const fov = W * 1.2;   // scales with canvas size
+      const vp = VERTS.map(v => prj(v[0]*S, v[1]*S, v[2]*S, b, fov));
+      const light = document.documentElement.classList.contains('light');
+
+      // Face visibility dot product with eye direction
+      const eyeN = { x:b.ex/3.5, y:b.ey/3.5, z:b.ez/3.5 };
+
+      const faceData = FACES.map((f, i) => {
+        const ndot = dot3(f.n[0],f.n[1],f.n[2], eyeN.x,eyeN.y,eyeN.z);
+        const pts = f.vi.map(idx => vp[idx]);
+        if (pts.some(p=>!p)) return null;
+        const avgZ = pts.reduce((s,p)=>s+p[2],0)/pts.length;
+        return { ...f, i, ndot, pts, avgZ };
+      }).filter(Boolean);
+
+      faceData.sort((a,b)=>b.avgZ-a.avgZ);
+
+      for (const f of faceData) {
+        const isHov = hov && hov.type==='face' && hov.index===f.i;
+        const visible = f.ndot > -0.05;
+        if (!visible && !isHov) continue;
+        ctx2.beginPath();
+        ctx2.moveTo(f.pts[0][0], f.pts[0][1]);
+        for (let k=1;k<f.pts.length;k++) ctx2.lineTo(f.pts[k][0], f.pts[k][1]);
+        ctx2.closePath();
+        // Fusion-style: semi-transparent face with lighting
+        const bright = Math.max(0.4, Math.min(1.0, 0.55 + f.ndot * 0.55));
+        if (isHov) {
+          ctx2.globalAlpha = 0.75; ctx2.fillStyle = '#5badff';
+        } else {
+          ctx2.globalAlpha = bright * 0.55;
+          ctx2.fillStyle = light ? f.fc : '#2a3040';
+        }
+        ctx2.fill();
+        ctx2.globalAlpha = 0.8;
+        ctx2.strokeStyle = light ? '#4a5870' : '#8090a8';
+        ctx2.lineWidth = 1.0;
+        ctx2.stroke();
+
+        if (visible && f.ndot > 0.15) {
+          const rX = ((f.pts[1][0]-f.pts[0][0]) + (f.pts[2][0]-f.pts[3][0])) / 4;
+          const rY = ((f.pts[1][1]-f.pts[0][1]) + (f.pts[2][1]-f.pts[3][1])) / 4;
+          const uX = ((f.pts[3][0]-f.pts[0][0]) + (f.pts[2][0]-f.pts[1][0])) / 4;
+          const uY = ((f.pts[3][1]-f.pts[0][1]) + (f.pts[2][1]-f.pts[1][1])) / 4;
+          const cx2 = (f.pts[0][0]+f.pts[1][0]+f.pts[2][0]+f.pts[3][0])/4;
+          const cy2 = (f.pts[0][1]+f.pts[1][1]+f.pts[2][1]+f.pts[3][1])/4;
+          const uFlip = uY < 0 || (Math.abs(uY) < 0.01 && uX < 0);
+          let cu = uFlip ? -uX : uX, du = uFlip ? -uY : uY;
+          let rx = rX, ry = rY;
+          if (rx*du - ry*cu < 0) { rx=-rx; ry=-ry; }
+          ctx2.save();
+          ctx2.setTransform(rx, ry, cu, du, cx2, cy2);
+          ctx2.globalAlpha = Math.min(1, (f.ndot - 0.15) * 2.5);
+          ctx2.fillStyle = isHov ? '#fff' : (light ? '#1a2030' : '#dde4ee');
+          ctx2.font = 'bold 0.26px sans-serif';
+          ctx2.textAlign = 'center'; ctx2.textBaseline = 'middle';
+          ctx2.fillText(f.lbl, 0, 0);
+          ctx2.restore();
+        }
+      }
+
+      ctx2.globalAlpha = 1;
+
+      // Edges: draw highlighted edge or all edges with hover glow
+      for (const e of EDGES) {
+        const p0=vp[e.vi[0]], p1=vp[e.vi[1]]; if (!p0||!p1) continue;
+        const isHovE = hov && hov.type==='edge' && hov.vi0===e.vi[0] && hov.vi1===e.vi[1];
+        if (isHovE) {
+          ctx2.beginPath(); ctx2.moveTo(p0[0],p0[1]); ctx2.lineTo(p1[0],p1[1]);
+          ctx2.strokeStyle='#4da6ff'; ctx2.lineWidth=3.5; ctx2.globalAlpha=1; ctx2.stroke();
+        }
+      }
+
+      // Corners: small highlight when hovered
+      for (const c of CORNERS) {
+        const p = vp[c.vi]; if (!p) continue;
+        const isHov2 = hov && hov.type==='corner' && hov.vi===c.vi;
+        if (isHov2) {
+          ctx2.beginPath(); ctx2.arc(p[0],p[1],6,0,Math.PI*2);
+          ctx2.fillStyle='#4da6ff'; ctx2.fill();
+        }
+      }
+
+      // Axis arrows from cube center
+      // Fusion-style: axis gizmo at front-bottom-left corner, arms go inward along cube edges.
+      // Front=+Z, Bottom=-Y, Left=-X  →  corner = (-S, -S, +S)
+      // Arms: +X (right), +Y (up), -Z (back) — all go toward cube interior.
+      const AXES = cloud && cloud.preAligned ? AXES_WORLD : AXES_RIG;
+      const cx = -S, cy = -S, cz = S;   // front-bottom-left corner
+      const axOrg = prj(cx, cy, cz, b, fov);
+      if (axOrg) {
+        const armLen = S * 2.3; // slightly longer than cube edge (2*S)
+        for (const ax of AXES) {
+          // Normalise axis direction, then walk inward (flip Z so it goes from front→back)
+          const [adx, ady, adz] = [ax.d[0]/1.55, ax.d[1]/1.55, -ax.d[2]/1.55];
+          const tip = prj(cx + adx*armLen, cy + ady*armLen, cz + adz*armLen, b, fov);
+          if (!tip) continue;
+          const dx = tip[0]-axOrg[0], dy = tip[1]-axOrg[1];
+          const len = Math.hypot(dx,dy)||1;
+          const nx = dx/len, ny = dy/len;
+          ctx2.globalAlpha = 1;
+          ctx2.beginPath(); ctx2.moveTo(axOrg[0],axOrg[1]); ctx2.lineTo(tip[0],tip[1]);
+          ctx2.strokeStyle=ax.c; ctx2.lineWidth=1.5; ctx2.stroke();
+          // Arrowhead
+          const ah=5;
+          ctx2.beginPath();
+          ctx2.moveTo(tip[0],tip[1]);
+          ctx2.lineTo(tip[0]-nx*ah+ny*ah*0.5, tip[1]-ny*ah-nx*ah*0.5);
+          ctx2.lineTo(tip[0]-nx*ah-ny*ah*0.5, tip[1]-ny*ah+nx*ah*0.5);
+          ctx2.closePath(); ctx2.fillStyle=ax.c; ctx2.fill();
+          // Label
+          ctx2.fillStyle=ax.c; ctx2.font='bold 10px sans-serif';
+          ctx2.textAlign='center'; ctx2.textBaseline='middle';
+          ctx2.fillText(ax.l, tip[0]+nx*9, tip[1]+ny*9);
+        }
+      }
+    }
+
+    function hitTest(mx, my, yaw, pitch) {
+      const b = basis(yaw, pitch);
+      const fov = W * 1.2;
+      const vp = VERTS.map(v => prj(v[0]*S,v[1]*S,v[2]*S,b,fov));
+      const eyeN = { x:b.ex/3.5, y:b.ey/3.5, z:b.ez/3.5 };
+
+      // Corners first (tiny target, high priority)
+      for (const c of CORNERS) {
+        const p = vp[c.vi]; if (!p) continue;
+        if (Math.hypot(mx-p[0],my-p[1]) < 9)
+          return { type:'corner', vi:c.vi, yaw:c.snapYaw, pit:c.snapPit };
+      }
+      // Edges
+      for (const e of EDGES) {
+        const p0=vp[e.vi[0]], p1=vp[e.vi[1]]; if (!p0||!p1) continue;
+        const dx=p1[0]-p0[0], dy=p1[1]-p0[1], len2=dx*dx+dy*dy;
+        if (len2<1) continue;
+        const t=Math.max(0,Math.min(1,((mx-p0[0])*dx+(my-p0[1])*dy)/len2));
+        const dist=Math.hypot(mx-p0[0]-t*dx, my-p0[1]-t*dy);
+        if (dist < 8)
+          return { type:'edge', vi0:e.vi[0], vi1:e.vi[1], yaw:e.snapYaw, pit:e.snapPit };
+      }
+      // Faces
+      let best=null, bestZ=Infinity;
+      for (const [i,f] of FACES.entries()) {
+        const ndot = dot3(f.n[0],f.n[1],f.n[2],eyeN.x,eyeN.y,eyeN.z);
+        if (ndot < -0.05) continue;
+        const pts = f.vi.map(idx=>vp[idx]);
+        if (pts.some(p=>!p)) continue;
+        if (pInPoly(mx,my,pts)) {
+          const z = pts.reduce((s,p)=>s+p[2],0)/pts.length;
+          if (z < bestZ) { bestZ=z; best={ type:'face',index:i,yaw:f.snapYaw,pit:f.snapPit }; }
+        }
+      }
+      return best;
+    }
+
+    function snapTo(yaw, pitch) {
+      const sy0=cam.yaw, sp0=cam.pitch;
+      let dyaw = ((yaw-sy0)%(Math.PI*2)+Math.PI*3)%(Math.PI*2)-Math.PI;
+      const t0=performance.now(), dur=320;
+      function step(t) {
+        const p=Math.min(1,(t-t0)/dur), e=1-Math.pow(1-p,3);
+        cam.yaw=sy0+dyaw*e; cam.pitch=sp0+(pitch-sp0)*e;
+        draw();
+        if (p<1) requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    }
+
+    let vcDrag = null; // {x, y, dragged}
+
+    vc.addEventListener('pointerdown', e => {
+      vc.setPointerCapture(e.pointerId);
+      vcDrag = { x: e.clientX, y: e.clientY, dragged: false };
+      e.stopPropagation();
+    });
+
+    vc.addEventListener('pointermove', e => {
+      const r = vc.getBoundingClientRect();
+      const mx = (e.clientX - r.left) * (W / r.width);
+      const my = (e.clientY - r.top)  * (H / r.height);
+
+      if (vcDrag) {
+        const dx = e.clientX - vcDrag.x, dy = e.clientY - vcDrag.y;
+        if (!vcDrag.dragged && Math.hypot(dx, dy) > 3) vcDrag.dragged = true;
+        if (vcDrag.dragged) {
+          // Drag cube = rotate object: yaw same, pitch inverted vs camera-drag
+          cam.yaw   -= dx * 0.006;
+          cam.pitch = Math.max(-1.5, Math.min(1.5, cam.pitch + dy * 0.006));
+          vcDrag.x = e.clientX; vcDrag.y = e.clientY;
+          hov = null;
+          draw();
+          return;
+        }
+      }
+
+      // Hover highlight (only when not dragging)
+      const hit = hitTest(mx, my, cam.yaw, cam.pitch);
+      const key = hit ? JSON.stringify(hit) : null;
+      const oldKey = hov ? JSON.stringify(hov) : null;
+      if (key !== oldKey) { hov = hit; vc.style.cursor = hit ? 'pointer' : 'grab'; render(cam.yaw, cam.pitch); }
+    });
+
+    vc.addEventListener('pointerup', e => {
+      if (!vcDrag) return;
+      if (!vcDrag.dragged) {
+        // Treat as click → snap
+        const r = vc.getBoundingClientRect();
+        const mx = (e.clientX - r.left) * (W / r.width);
+        const my = (e.clientY - r.top)  * (H / r.height);
+        const hit = hitTest(mx, my, cam.yaw, cam.pitch);
+        if (hit) snapTo(hit.yaw, hit.pit);
+      }
+      vcDrag = null;
+      vc.style.cursor = hov ? 'pointer' : 'grab';
+    });
+
+    vc.addEventListener('mouseleave', () => {
+      if (!vcDrag) { hov = null; vc.style.cursor = 'grab'; render(cam.yaw, cam.pitch); }
+    });
+
+    return { render, snapTo };
+  })();
 
   // ── Load preview from the server ──────────────────────────────────────
   function loadPreview(presetName) {
@@ -510,7 +944,10 @@
       return;
     }
 
-    // World frame mapping: wp = (-rawY, rawZ, rawX)  (see vertex shader)
+    // Detect whether gravity rotation was applied server-side
+    const gravSrc = res.headers.get('X-Gravity-Source') || 'none';
+    const preAligned = gravSrc !== 'none';
+
     let xMin=Infinity,xMax=-Infinity, yMin=Infinity,yMax=-Infinity, zMin=Infinity,zMax=-Infinity;
     for (let i = 0; i < positions.length; i += 3) {
       const x = positions[i], y = positions[i+1], z = positions[i+2];
@@ -518,9 +955,20 @@
       if (y < yMin) yMin = y; if (y > yMax) yMax = y;
       if (z < zMin) zMin = z; if (z > zMax) zMax = z;
     }
-    // center in world space: worldX=-rawY, worldY=rawZ, worldZ=rawX
-    const center = [-(yMin+yMax)/2, (zMin+zMax)/2, (xMin+xMax)/2];
-    const upMin = zMin, upMax = zMax;  // worldY = rawZ = height
+    // If pre-aligned (server applied gravity rotation): buffer is already in world frame,
+    // worldX=X, worldY=Y(up), worldZ=Z. No axis remapping in shader.
+    // Otherwise rig frame: shader remaps → worldX=bufY, worldY=bufX(up), worldZ=bufZ.
+    let center, upMin, upMax;
+    if (preAligned) {
+      // bag_preview.py applies gravity rotation → output has worldY = up
+      center = [(xMin+xMax)/2, (yMin+yMax)/2, (zMin+zMax)/2];
+      upMin = yMin; upMax = yMax;
+    } else {
+      // Rig frame: bufX = rotation axis = vertical, bufY = lateral, bufZ = radial
+      // Shader maps worldX=bufY, worldY=bufX(up), worldZ=bufZ
+      center = [(yMin+yMax)/2, (xMin+xMax)/2, (zMin+zMax)/2];
+      upMin = xMin; upMax = xMax;
+    }
 
     let rMin = Infinity, rMax = -Infinity;
     for (let i = 0; i < positions.length; i += 3) {
@@ -529,7 +977,8 @@
       if (r < rMin) rMin = r; if (r > rMax) rMax = r;
     }
 
-    cloud = { positions, count, center, upMin, upMax, rMin, rMax };
+    const isFirstLoad = !cloud || cloud._bagName !== BAG_NAME;
+    cloud = { positions, count, center, upMin, upMax, rMin, rMax, preAligned, _bagName: BAG_NAME };
 
     if (gl) {
       gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
@@ -537,12 +986,16 @@
     }
 
     const diag = vLen([xMax-xMin, yMax-yMin, zMax-zMin]) || 1;
-    if (!restoreCam()) {
+    if (isFirstLoad) {
+      // First load of this bag: anchor camera to model center
       cam.target = cloud.center.slice();
-      cam.radius = diag * 1.3;
-      cam.yaw = Math.PI * 0.25;
-      cam.pitch = 0.45;
+      if (!restoreCam()) {
+        cam.radius = diag * 1.3;
+        cam.yaw = -Math.PI * 0.25;
+        cam.pitch = 0.6;
+      }
     }
+    // Preset reload (fast/default/high): keep cam.target as-is so view doesn't jump
 
     msgEl.classList.add('hidden');
     renderStats(res.headers, count);
@@ -578,13 +1031,14 @@
     draw();
   }
 
-  // Standard view presets. In this rig Y is "up" in world space (raw Y flipped in shader).
-  // pitch=π/2 → top-down; pitch=0 → equatorial; yaw rotates azimuth.
+  // View presets. World Y = rig Z (up). Rig X=depth(worldZ), Y=lateral(worldX).
+  // Standard iso: Z up, X right-down (worldZ→right-down), Y right-up (worldX→right-up)
+  // → camera at yaw=-π/4 (left of front), pitch=0.6
   const VIEW_PRESETS = {
-    top:   { yaw: 0,            pitch: Math.PI / 2 - 0.01 },
-    front: { yaw: 0,            pitch: 0.05 },
-    side:  { yaw: Math.PI / 2,  pitch: 0.05 },
-    iso:   { yaw: Math.PI * 0.25, pitch: 0.55 },
+    top:   { yaw: -Math.PI * 0.25, pitch: Math.PI / 2 - 0.01 },
+    front: { yaw: 0,               pitch: 0.05 },
+    side:  { yaw: Math.PI / 2,     pitch: 0.05 },
+    iso:   { yaw: -Math.PI * 0.25, pitch: 0.6  },
   };
 
   function setView(name) {
