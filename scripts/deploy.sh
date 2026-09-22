@@ -41,14 +41,20 @@ if [[ "$TARGET" == "system" ]]; then
 fi
 
 # Restart services
+# Note: the Pi user has no NOPASSWD sudo for systemctl in general.
+# Flask HMI (hmi.service) is restarted via sudo (NOPASSWD granted for it).
+# hmi_bridge / slam-scanner are restarted via the HMI API (which runs as root/service).
 info "restarting services ($TARGET)"
-if [[ "$TARGET" == "hmi" ]]; then
+_restart_hmi_bridge() {
+  curl -sf -X POST "http://$(echo $PI | cut -d@ -f2):3000/api/sensors/restart_all" \
+    | python3 -c "import sys,json; d=json.load(sys.stdin); print('  hmi_bridge:', d.get('msg','?'))" \
+    || echo "  warning: could not reach HMI API for restart (is hmi running?)"
+}
+if [[ "$TARGET" == "hmi" || "$TARGET" == "all" ]]; then
   ssh "$PI" "sudo systemctl restart hmi" && ok "hmi restarted"
-elif [[ "$TARGET" == "ros2" ]]; then
-  ssh "$PI" "sudo systemctl restart hmi_bridge slam-scanner 2>/dev/null || true" && ok "ros2 services restarted"
-elif [[ "$TARGET" == "all" ]]; then
-  ssh "$PI" "sudo systemctl restart hmi; sudo systemctl restart hmi_bridge slam-scanner 2>/dev/null || true"
-  ok "all services restarted"
+fi
+if [[ "$TARGET" == "ros2" || "$TARGET" == "all" ]]; then
+  _restart_hmi_bridge && ok "hmi_bridge restart requested via API"
 fi
 
 echo ""
