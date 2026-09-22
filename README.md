@@ -1,8 +1,8 @@
-# 3D LIDAR SLAM Scanner
+# Pulse — 3D LIDAR Scanner
 
-Самодельный 3D SLAM-сканер: Velodyne VLP-16 на вращающейся платформе с RP2040-энкодером.  
+Самодельный 3D сканер: Velodyne VLP-16 на вращающейся платформе с RP2040-энкодером.  
 Orange Pi 5 Plus — ROS2 Jazzy, Flask HMI, запись bag-файлов.  
-Mac — постобработка: deskew, ICP, экспорт в CAD.
+Mac — постобработка: deskew, ICP, экспорт в E57/LAS/XYZ для CAD.
 
 ---
 
@@ -40,7 +40,7 @@ Mac — постобработка: deskew, ICP, экспорт в CAD.
 | Редуктор            | 5:1                      | Мотор 200 RPM → платформа 40 RPM        |
 | Датчик угла         | AS5600 (I2C)             | Магнитный энкодер, абсолютный угол      |
 | HMI                 | CYD ESP32-2432S028R      | Touchscreen панель управления           |
-| IMU                 | Yahboom 9-axis IMU       | 9DOF (используется в 6-axis режиме — без магнетометра, помехи от мотора); пакет `imu_ros2_device` |
+| IMU                 | Yahboom 9-axis IMU       | 9DOF (6-axis режим, без магнетометра); пакет `imu_ros2_device` |
 | Аккумулятор         | 1P10S (42 В)             | От гироскутера                          |
 
 ---
@@ -48,20 +48,19 @@ Mac — постобработка: deskew, ICP, экспорт в CAD.
 ## Структура монорепо
 
 ```
-3dlidar/
+pulse/  (3dlidar/)
 ├── orangepi/               # Всё, что живёт на Orange Pi
 │   ├── hmi/                # Flask HMI (порт 3000)
 │   │   ├── app.py
-│   │   ├── bag_preview.py
+│   │   ├── bag_preview.py  # WebGL preview + TF gravity correction
 │   │   └── templates/
+│   │       └── preview.html  # WebGL viewer: ViewCube, экспорт E57/XYZ/LAS
 │   ├── ros2/               # ROS2 пакеты
 │   │   ├── slam_bringup/
 │   │   ├── spin_controller/
-│   │   ├── hmi_bridge/
+│   │   ├── hmi_bridge/     # bag recorder: /tf, /imu, /velodyne_points
 │   │   ├── hmi_manager/
 │   │   └── encoder_bridge/
-│   ├── scripts/
-│   │   └── update.sh       # OTA: git pull + rebuild + restart
 │   └── system/             # systemd, netplan, udev, sysctl
 │
 ├── desktop/                # Mac-side инструменты
@@ -69,7 +68,7 @@ Mac — постобработка: deskew, ICP, экспорт в CAD.
 │   ├── world_map.py
 │   ├── flythrough.py       # OpenGL вьювер облаков
 │   ├── icp_merge.py
-│   ├── export_cad.py       # → E57 для CAD
+│   ├── export_cad.py       # E57 / LAS / XYZ / PTS для CAD
 │   └── requirements.txt
 │
 ├── firmware/
@@ -80,10 +79,11 @@ Mac — постобработка: deskew, ICP, экспорт в CAD.
 │   └── offline_deskew.py   # Единый источник: деплоится на Pi и symlink на Mac
 │
 ├── scripts/
-│   ├── deploy.sh           # Mac → Pi: rsync + colcon + restart
+│   ├── deploy.sh           # Mac → Pi: rsync + colcon + restart (ждёт HMI up)
 │   ├── bootstrap.sh        # Чистая Pi с нуля
 │   └── sync_bags.sh        # Pi bags/ → local bags/
 │
+├── debug_preview_server.py # Локальный Flask сервер для тестирования без rclpy
 ├── bags/                   # Локальные записи (gitignored)
 ├── Makefile
 └── README.md
@@ -112,6 +112,10 @@ make bootstrap
 # Прошивка железа
 make flash-rp2040
 make flash-cyd
+
+# Локальный дебаг HMI на Mac (без rclpy)
+python3 debug_preview_server.py
+# → http://localhost:5001/preview/<bag_name>
 ```
 
 ---
@@ -129,7 +133,8 @@ ssh $PI "sudo systemctl restart hmi"
 # ROS2
 rsync -av orangepi/ros2/ $PI:~/ros2_ws/src/
 ssh $PI "source /opt/ros/jazzy/setup.bash && cd ~/ros2_ws && colcon build"
-ssh $PI "sudo systemctl restart hmi_bridge slam-scanner"
+# hmi_bridge перезапускается через API (NOPASSWD sudoers для hmi_bridge)
+curl -X POST http://192.168.1.108:3000/api/sensors/restart_all
 ```
 
 ---
@@ -190,13 +195,14 @@ GPIO 1/3 (P5) нельзя — CH340C держит GPIO3 HIGH даже без US
 
 ## ROS2 топики
 
-| Топик                          | Тип                       | Источник           |
-|--------------------------------|---------------------------|--------------------|
-| `/velodyne_points`             | `sensor_msgs/PointCloud2` | VLP-16 driver      |
-| `/rotating_platform/angle`     | `std_msgs/Float64`        | spin_controller    |
-| `/rotating_platform/joint_state` | `sensor_msgs/JointState` | spin_controller    |
-| `/imu`                         | `sensor_msgs/Imu`         | Yahboom 9-axis IMU (`imu_ros2_device`) |
-| `/imu/mag`                     | `sensor_msgs/MagneticField` | Yahboom 9-axis IMU (магнетометр) |
+| Топик                            | Тип                         | Источник                        |
+|----------------------------------|-----------------------------|---------------------------------|
+| `/velodyne_points`               | `sensor_msgs/PointCloud2`   | VLP-16 driver                   |
+| `/rotating_platform/angle`       | `std_msgs/Float64`          | spin_controller                 |
+| `/rotating_platform/joint_state` | `sensor_msgs/JointState`    | spin_controller                 |
+| `/imu`                           | `sensor_msgs/Imu`           | Yahboom IMU (`imu_ros2_device`) |
+| `/imu/mag`                       | `sensor_msgs/MagneticField` | Yahboom IMU (магнетометр)       |
+| `/tf`                            | `tf2_msgs/TFMessage`        | robot_localization (Madgwick)   |
 
 ### TF дерево
 
@@ -211,49 +217,71 @@ world → imu_link → platform_base → platform_rotating → velodyne
 
 ---
 
+## WebGL Preview & Export
+
+Адрес: `http://192.168.1.108:3000/preview/<bag_name>`
+
+Возможности:
+- 3D просмотр облака точек (WebGL, до 300k точек)
+- Автоматическая коррекция ориентации: TF `world→imu_link` → Z-up
+- ViewCube с вращением сцены drag-жестом
+- Раскраска по высоте или дальности
+- Экспорт: **E57 / LAS / XYZ** (Z-up, готово для ReCap / Revit / Fusion 360)
+
+### Пайплайн preview/export
+
+```
+bag (.mcap)
+   │
+   ▼  bag_preview.py
+   ├─ deskew (offline_deskew.py)
+   ├─ TF gravity rotation  (/tf world→imu_link, Madgwick)
+   │  └─ fallback: IMU accelerometer
+   ├─ WebGL Y-up frame     (для preview.html)
+   └─ Z-up frame           (для экспорта E57/LAS/XYZ)
+```
+
+### HMI API
+
+| Endpoint                        | Метод | Назначение                          |
+|---------------------------------|-------|-------------------------------------|
+| `/api/status`                   | GET   | Статус сенсоров                     |
+| `/api/record/start`             | POST  | Начать запись bag                   |
+| `/api/record/stop`              | POST  | Остановить запись                   |
+| `/api/lidar/spindle`            | POST  | Включить/выключить лидар, RPM       |
+| `/api/bags/<name>/preview`      | GET   | Float32 XYZ буфер для WebGL         |
+| `/api/bags/<name>/export`       | GET   | Скачать E57/LAS/XYZ (?fmt=e57)      |
+| `/api/sensors/restart_all`      | POST  | Перезапустить hmi_bridge            |
+| `/api/system/update`            | POST  | OTA update.sh                       |
+| `/api/system/update/log`        | GET   | SSE лог обновления                  |
+| `/api/shutdown`                 | POST  | Выключить Pi                        |
+
+---
+
 ## Пайплайн постобработки (Mac)
 
 ```
 MCAP bag
    │
    ▼
-shared/offline_deskew.py   ← /velodyne_points + /rotating_platform/angle
+shared/offline_deskew.py   ← /velodyne_points + /rotating_platform/joint_state
    │   MOUNT_RPY_DEG = [0.0, 0.0, -1.6]   (yaw-калибровка)
    ▼
 desktop/icp_merge.py       ← угловые срезы + ICP регистрация
    ▼
 desktop/flythrough.py      ← OpenGL вьювер (сравнение, выравнивание)
    ▼
-desktop/export_cad.py      ← E57 для CAD
+desktop/export_cad.py      ← E57 / LAS / XYZ / PTS для CAD
 ```
 
 ### Параметры калибровки (`shared/offline_deskew.py`)
 
-| Параметр             | Значение    | Описание                            |
-|----------------------|-------------|-------------------------------------|
-| `ROTATION_AXIS`      | `'x'`       | Ось вращения платформы              |
-| `ANGLE_OFFSET_DEG`   | `184.0`     | Калибровочное смещение нуля         |
-| `MOUNT_RPY_DEG`      | `[0,0,-1.6]`| Крен/тангаж/рыск монтажа лидара     |
-| `ROTATION_CENTER`    | `[0,0,0]`   | Смещение оптического центра лидара  |
-
----
-
-## HMI (Flask, порт 3000)
-
-Адрес: `http://192.168.1.108:3000`
-
-Основные API:
-
-| Endpoint                    | Метод | Назначение                     |
-|-----------------------------|-------|--------------------------------|
-| `/api/status`               | GET   | Статус сенсоров                |
-| `/api/record/start`         | POST  | Начать запись bag              |
-| `/api/record/stop`          | POST  | Остановить запись              |
-| `/api/lidar/spindle`        | POST  | Включить/выключить, RPM 300/600|
-| `/api/preview`              | GET   | XYZ облако для WebGL           |
-| `/api/system/update`        | POST  | Запустить OTA update.sh        |
-| `/api/system/update/log`    | GET   | SSE лог обновления             |
-| `/api/shutdown`             | POST  | Выключить Pi                   |
+| Параметр             | Значение     | Описание                           |
+|----------------------|--------------|------------------------------------|
+| `ROTATION_AXIS`      | `'x'`        | Ось вращения платформы             |
+| `ANGLE_OFFSET_DEG`   | `184.0`      | Калибровочное смещение нуля        |
+| `MOUNT_RPY_DEG`      | `[0,0,-1.6]` | Крен/тангаж/рыск монтажа лидара    |
+| `ROTATION_CENTER`    | `[0,0,0]`    | Смещение оптического центра лидара |
 
 ---
 
@@ -264,8 +292,8 @@ desktop/export_cad.py      ← E57 для CAD
 - HMI: `~/hmi/` → `systemctl status hmi`
 - Bags: `~/bags/`
 - ROS2 ws: `~/ros2_ws/`
-- OTA скрипт: `~/scripts/update.sh`
 - IP: `192.168.1.108`, пользователь `openclaw`
+- sudoers NOPASSWD: `systemctl restart hmi`, `systemctl restart hmi_bridge`
 
 ---
 
@@ -273,11 +301,12 @@ desktop/export_cad.py      ← E57 для CAD
 
 - ✅ VLP-16 на изолированной подсети `192.168.100.x`
 - ✅ RP2040 spin_controller: FOC, энкодер, UART 100 Hz
-- ✅ ROS2 нода парсинга UART → `/rotating_platform/angle`
-- ✅ Flask HMI: запись, мониторинг, WebGL-просмотр bag
+- ✅ ROS2: spin_controller, IMU, Madgwick TF, velodyne driver
+- ✅ Flask HMI: запись bag (/tf + /imu + /velodyne_points), мониторинг
+- ✅ WebGL preview: TF-коррекция ориентации, ViewCube, drag-вращение
+- ✅ Экспорт E57/LAS/XYZ прямо из браузера (Z-up, готово для CAD)
 - ✅ Deskew pipeline: компенсация motion blur по углу энкодера
-- ✅ Yaw-калибровка: −1.6° (вращение не строго вертикальное)
+- ✅ deploy.sh: rsync + colcon + ожидание HMI + restart через API
 - ✅ Монорепо: orangepi/ desktop/ firmware/ shared/
-- ✅ deploy.sh, bootstrap.sh, OTA update.sh
 - ⏸ Биение оси ~1° — требует механической диагностики
 - ⏸ CYD touchscreen координаты — XPT2046 SPI конфликт, workaround: только IRQ
