@@ -34,7 +34,7 @@ Mac — постобработка: deskew, ICP, экспорт в CAD.
 |---------------------|--------------------------|-----------------------------------------|
 | Основной ПК         | Orange Pi 5 Plus         | ROS2, запись bag, Flask HMI             |
 | Лидар               | Velodyne VLP-16          | Основной сенсор, UDP :2368              |
-| Контроллер вращения | RP2040 Zero (Waveshare)  | FOC, BLDC, encoder → UART 100 Hz        |
+| Контроллер вращения | RP2040 Zero (Waveshare)  | FOC closed-loop PID, encoder → UART 100 Hz |
 | Драйвер мотора      | SimpleFOC Mini           | 3-фазный PWM                            |
 | Мотор               | 2840 BLDC, 7 пар полюсов | Вращение платформы                      |
 | Редуктор            | 5:1                      | Мотор 200 RPM → платформа 40 RPM        |
@@ -138,12 +138,30 @@ ssh $PI "sudo systemctl restart hmi_bridge slam-scanner"
 
 ### RP2040 → Orange Pi (UART, 230400, 100 Hz)
 
+Телеметрия (100 Hz):
 ```
-$<millis>,<angle_deg_unwrapped>,<rpm>*<XOR_checksum>\n
+$T,<millis>,<angle_deg_unwrapped>,<rpm>*<XOR_checksum>\n
 ```
-Пример: `$12345,184.23,39.87*3F`
+Пример: `$T,12345,184.23,39.87*3F`
+
+Команды Orange Pi → RP2040:
+```
+$START*CS        — запустить мотор (initFOC + PID)
+$STOP*CS         — остановить
+$STATUS*CS       — ответ: $S,<state>,<rpm>,<target_rpm>,<enabled>,<fault>,<uptime>*CS
+$DIAG*CS         — ответ: $D,<sensor_ok>,<wire_err>,<bus_ok>*CS
+$SETRPM,<rpm>*CS — установить целевые RPM платформы
+```
+
+Состояния: `INIT` → `SELFTEST` → `IDLE` → `RUNNING` / `FAULT`  
+Коды fault: `1=SENSOR_DEAD`, `2=ROTATE_FAILED`
+
+> Мотор молчит до явной команды `$START` — `initFOC()` не вызывается автоматически.
 
 ### CYD ESP32 ↔ Orange Pi (UART, 115200)
+
+Пины UART: **GPIO 22 (RX) / GPIO 27 (TX)** через CN1-коннектор.  
+GPIO 1/3 (P5) нельзя — CH340C держит GPIO3 HIGH даже без USB.
 
 Статус Orange Pi → CYD:
 ```json
@@ -151,6 +169,8 @@ $<millis>,<angle_deg_unwrapped>,<rpm>*<XOR_checksum>\n
   "sensors_running": true,
   "lidar_hz": 10.0,
   "imu_hz": 100.0,
+  "lidar_ok": true,
+  "imu_ok": true,
   "recording": false,
   "disk_gb": 123.4,
   "rec_duration": 60,
@@ -161,9 +181,10 @@ $<millis>,<angle_deg_unwrapped>,<rpm>*<XOR_checksum>\n
 ```json
 {"cmd": "start_recording"}
 {"cmd": "stop_recording"}
+{"cmd": "shutdown"}          ← длинное нажатие ≥2 с
 ```
 
-> ⚠️ После прошивки CYD отключить USB-C — GPIO 1/3 делят UART с USB-serial.
+> XPT2046 координаты не работают (SPI-конфликт с TFT_eSPI) — используется только IRQ на GPIO 36.
 
 ---
 
