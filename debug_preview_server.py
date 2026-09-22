@@ -90,6 +90,9 @@ def api_bag_export(name):
 
     import numpy as np, io, tempfile
     pts = np.frombuffer(result['buf'], dtype=np.float32).reshape(-1, 3)
+    # Convert WebGL Y-up → Z-up (CAD/E57/LAS convention)
+    _R_yup_to_zup = np.array([[1,0,0],[0,0,-1],[0,1,0]], dtype=np.float32)
+    pts = pts @ _R_yup_to_zup.T
 
     if fmt == 'e57':
         try:

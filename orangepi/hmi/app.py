@@ -997,6 +997,13 @@ def api_bag_export(name):
     import numpy as np
     pts = np.frombuffer(result['buf'], dtype=np.float32).reshape(-1, 3)
 
+    # build_bag_preview returns points in WebGL Y-up frame (Y=height).
+    # CAD / E57 / LAS expect Z-up (ROS/standard). Apply inverse of _R_zup_to_yup:
+    #   _R_zup_to_yup  = [[1,0,0],[0,0,1],[0,-1,0]]
+    #   _R_yup_to_zup  = [[1,0,0],[0,0,-1],[0,1,0]]  (transpose, it's orthogonal)
+    _R_yup_to_zup = np.array([[1,0,0],[0,0,-1],[0,1,0]], dtype=np.float32)
+    pts = pts @ _R_yup_to_zup.T   # now X=ROS X, Y=ROS Y, Z=up
+
     import io, tempfile
     if fmt == 'e57':
         try:
