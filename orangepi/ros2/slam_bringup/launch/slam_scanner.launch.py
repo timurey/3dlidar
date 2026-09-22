@@ -94,7 +94,8 @@ def generate_launch_description():
             'bag_topics':  '/velodyne_points /imu /imu/mag '
                            '/rotating_platform/angle '
                            '/rotating_platform/velocity '
-                           '/rotating_platform/joint_state',
+                           '/rotating_platform/joint_state '
+                           '/tf /tf_static',
         }],
     )
 

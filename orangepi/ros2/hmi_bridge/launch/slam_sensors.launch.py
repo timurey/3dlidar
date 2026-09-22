@@ -10,7 +10,7 @@ def generate_launch_description():
     """
     Launch file that starts all sensors for scanning:
     - Hesai Pandar 40P LiDAR
-    - Wheeltec N100 IMU (optional, see docs/DEPENDENCIES.md)
+    - Yahboom 9-axis IMU (optional, see docs/DEPENDENCIES.md)
     - Encoder bridge + point cloud reconstructor (ROBIN reconstruction)
 
     This is meant to be launched by the HMI bridge when user presses START
@@ -27,16 +27,13 @@ def generate_launch_description():
 
         # Launch IMU node
         Node(
-            package='wheeltec_n100_imu',
-            executable='imu_node',
-            name='imu_node',
+            package='imu_ros2_device',
+            executable='ybimu_driver',
+            name='ybimu_driver',
             output='screen',
             respawn=True,
-            respawn_delay=5.0,
-            parameters=[{
-                'serial_port': '/dev/ttyIMU',
-                'serial_baud': 921600
-            }]
+            respawn_delay=3.0,
+            remappings=[('/imu/data_raw', '/imu')],
         ),
 
         # Include ROBIN reconstruction launch file (encoder bridge + point cloud reconstructor)

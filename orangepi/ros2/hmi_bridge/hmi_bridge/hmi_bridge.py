@@ -6,6 +6,7 @@ from rclpy.qos import qos_profile_sensor_data
 from rclpy.serialization import serialize_message
 from sensor_msgs.msg import PointCloud2, Imu, JointState
 from std_msgs.msg import String, Float64
+from tf2_msgs.msg import TFMessage
 from std_srvs.srv import Trigger
 from rosbag2_py import SequentialWriter, StorageOptions, ConverterOptions, TopicMetadata
 import json
@@ -25,14 +26,19 @@ RECORD_TOPICS = {
         ('/velodyne_points',              'sensor_msgs/msg/PointCloud2'),
         ('/rotating_platform/angle',      'std_msgs/msg/Float64'),
         ('/rotating_platform/velocity',   'std_msgs/msg/Float64'),
-        ('/rotating_platform/joint_state', 'sensor_msgs/msg/JointState'),  # stamped angle for deskew
+        ('/rotating_platform/joint_state', 'sensor_msgs/msg/JointState'),
+        ('/imu',                          'sensor_msgs/msg/Imu'),
+        ('/tf',                           'tf2_msgs/msg/TFMessage'),
+        ('/tf_static',                    'tf2_msgs/msg/TFMessage'),
     ],
     'slam': [
         ('/velodyne_points',              'sensor_msgs/msg/PointCloud2'),
         ('/rotating_platform/angle',      'std_msgs/msg/Float64'),
         ('/rotating_platform/velocity',   'std_msgs/msg/Float64'),
-        ('/rotating_platform/joint_state', 'sensor_msgs/msg/JointState'),  # stamped angle for deskew
+        ('/rotating_platform/joint_state', 'sensor_msgs/msg/JointState'),
         ('/imu',                          'sensor_msgs/msg/Imu'),
+        ('/tf',                           'tf2_msgs/msg/TFMessage'),
+        ('/tf_static',                    'tf2_msgs/msg/TFMessage'),
     ],
 }
 
@@ -158,6 +164,25 @@ class HMIBridge(Node):
             10
         )
 
+        # TF — transient_local QoS so tf_static is received even if published before us
+        from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy, HistoryPolicy
+        _tf_qos = QoSProfile(
+            depth=100,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+        )
+        _tf_static_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            history=HistoryPolicy.KEEP_LAST,
+        )
+        self.tf_sub = self.create_subscription(
+            TFMessage, '/tf', self.tf_callback, _tf_qos)
+        self.tf_static_sub = self.create_subscription(
+            TFMessage, '/tf_static', self.tf_static_callback, _tf_static_qos)
+
         # Spin controller service clients
         self._spin_start = self.create_client(Trigger, '/spin_controller/start')
         self._spin_stop  = self.create_client(Trigger, '/spin_controller/stop')
@@ -263,6 +288,14 @@ class HMIBridge(Node):
         The message's own header.stamp (not this log_time) is what the deskewer uses."""
         current_time = self.get_clock().now()
         self._write_to_bag('/rotating_platform/joint_state', msg, current_time.nanoseconds)
+
+    def tf_callback(self, msg):
+        current_time = self.get_clock().now()
+        self._write_to_bag('/tf', msg, current_time.nanoseconds)
+
+    def tf_static_callback(self, msg):
+        current_time = self.get_clock().now()
+        self._write_to_bag('/tf_static', msg, current_time.nanoseconds)
 
     def calculate_hz(self):
         """Calculate message rates for topics"""

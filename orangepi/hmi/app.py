@@ -39,6 +39,9 @@ RECORD_TOPICS = {
         '/rotating_platform/angle',
         '/rotating_platform/velocity',
         '/rotating_platform/joint_state',   # stamped angle for offline per-point deskew
+        '/imu',
+        '/tf',
+        '/tf_static',
     ],
     'slam': [
         '/velodyne_points',
@@ -46,6 +49,8 @@ RECORD_TOPICS = {
         '/rotating_platform/velocity',
         '/rotating_platform/joint_state',   # stamped angle for offline per-point deskew
         '/imu',
+        '/tf',
+        '/tf_static',
     ],
 }
 
@@ -953,6 +958,7 @@ def api_bag_preview(name):
     resp.headers['X-Encoder-Source']       = result['encoder_source']
     resp.headers['X-Rotations-Captured']   = str(result['rotations_captured'])
     resp.headers['X-Compute-S']            = str(result['compute_s'])
+    resp.headers['X-Gravity-Source']       = result.get('gravity_source', 'none')
     return resp
 
 
