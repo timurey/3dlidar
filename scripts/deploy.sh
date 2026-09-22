@@ -41,20 +41,48 @@ if [[ "$TARGET" == "system" ]]; then
 fi
 
 # Restart services
-# Note: the Pi user has no NOPASSWD sudo for systemctl in general.
-# Flask HMI (hmi.service) is restarted via sudo (NOPASSWD granted for it).
-# hmi_bridge / slam-scanner are restarted via the HMI API (which runs as root/service).
+# Flask HMI (hmi.service): NOPASSWD sudo granted for this unit.
+# hmi_bridge: restarted via HMI API (POST /api/sensors/restart_all).
+#   Wait up to 8 s for Flask to come up after restart before calling API.
 info "restarting services ($TARGET)"
-_restart_hmi_bridge() {
-  curl -sf -X POST "http://$(echo $PI | cut -d@ -f2):3000/api/sensors/restart_all" \
-    | python3 -c "import sys,json; d=json.load(sys.stdin); print('  hmi_bridge:', d.get('msg','?'))" \
-    || echo "  warning: could not reach HMI API for restart (is hmi running?)"
+
+_wait_hmi_up() {
+  local host; host="$(echo "$PI" | cut -d@ -f2)"
+  for i in 1 2 3 4; do
+    sleep 2
+    if curl -sf "http://${host}:3000/api/status" -o /dev/null 2>/dev/null; then
+      return 0
+    fi
+  done
+  return 1
 }
+
+_restart_hmi_bridge() {
+  local host; host="$(echo "$PI" | cut -d@ -f2)"
+  local body
+  body=$(curl -sf -X POST "http://${host}:3000/api/sensors/restart_all" 2>/dev/null) || {
+    echo "  warning: HMI API unreachable — hmi_bridge not restarted"
+    return 1
+  }
+  local msg; msg=$(echo "$body" | python3 -c "import sys,json; print(json.load(sys.stdin).get('msg','?'))" 2>/dev/null || echo "$body")
+  echo "  hmi_bridge: $msg"
+}
+
 if [[ "$TARGET" == "hmi" || "$TARGET" == "all" ]]; then
   ssh "$PI" "sudo systemctl restart hmi" && ok "hmi restarted"
+  info "waiting for HMI to come up..."
+  if _wait_hmi_up; then
+    ok "HMI is up"
+  else
+    echo "  warning: HMI did not respond within 8 s"
+  fi
 fi
 if [[ "$TARGET" == "ros2" || "$TARGET" == "all" ]]; then
-  _restart_hmi_bridge && ok "hmi_bridge restart requested via API"
+  # When 'all': HMI was just (re)started, may need a moment even after _wait_hmi_up
+  [[ "$TARGET" == "all" ]] && sleep 1
+  if _restart_hmi_bridge; then
+    ok "hmi_bridge restart requested via API"
+  fi
 fi
 
 echo ""
