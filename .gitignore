@@ -37,3 +37,6 @@ log/
 ## Logs
 *.log
 update.log
+
+## Media
+media/
