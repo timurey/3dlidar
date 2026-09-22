@@ -268,7 +268,9 @@
     uniform vec3 uCenter;
     varying float vT;
     void main() {
-      vec3 wp = vec3(aPos.x, -aPos.y, aPos.z);  // confirmed rig orientation: raw Y flipped
+      // Rig frame: X=radial(rotation axis), Y=lateral(left), Z=up
+      // WebGL world: X=right(-Y), Y=up(Z), Z=depth(X)
+      vec3 wp = vec3(-aPos.y, aPos.z, aPos.x);
       vec4 viewPos = uView * vec4(wp, 1.0);
       gl_Position = uProj * viewPos;
       float val = (uColorMode < 0.5) ? wp.y : length(wp - uCenter);
@@ -364,8 +366,7 @@
   }
 
   // ── Camera (spherical orbit around a target, world +Y up) ─────────────────
-  // Confirmed correct orientation for this rig is raw Y flipped — baked
-  // directly into the vertex shader (wp = vec3(aPos.x, -aPos.y, aPos.z)).
+  // World +Y = height (rawZ). Axis remap in vertex shader: wp = (-rawY, rawZ, rawX).
   const cam = { yaw: Math.PI * 0.25, pitch: 0.45, radius: 10, target: [0, 0, 0] };
   const _CAM_KEY = 'lumirion-cam-' + BAG_NAME;
 
@@ -509,8 +510,7 @@
       return;
     }
 
-    // World frame = raw with Y flipped (see vertex shader), so min/max swap
-    // sign and order on that axis only.
+    // World frame mapping: wp = (-rawY, rawZ, rawX)  (see vertex shader)
     let xMin=Infinity,xMax=-Infinity, yMin=Infinity,yMax=-Infinity, zMin=Infinity,zMax=-Infinity;
     for (let i = 0; i < positions.length; i += 3) {
       const x = positions[i], y = positions[i+1], z = positions[i+2];
@@ -518,8 +518,9 @@
       if (y < yMin) yMin = y; if (y > yMax) yMax = y;
       if (z < zMin) zMin = z; if (z > zMax) zMax = z;
     }
-    const center = [(xMin+xMax)/2, -(yMin+yMax)/2, (zMin+zMax)/2];
-    const upMin = -yMax, upMax = -yMin;
+    // center in world space: worldX=-rawY, worldY=rawZ, worldZ=rawX
+    const center = [-(yMin+yMax)/2, (zMin+zMax)/2, (xMin+xMax)/2];
+    const upMin = zMin, upMax = zMax;  // worldY = rawZ = height
 
     let rMin = Infinity, rMax = -Infinity;
     for (let i = 0; i < positions.length; i += 3) {
