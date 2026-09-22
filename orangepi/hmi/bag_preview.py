@@ -34,6 +34,8 @@ TOPIC_POINTS      = '/velodyne_points'
 # The platform_angle topic is a Float64 fallback (uses log_time, jitter ~10–30 ms).
 TOPIC_JOINT_STATE = '/rotating_platform/joint_state'
 TOPIC_ANGLE       = '/rotating_platform/angle'
+# IMU topics tried in order; first match with data wins
+IMU_TOPICS = ['/imu/data', '/imu/data_raw', '/imu']
 
 DEFAULT_MAX_CLOUDS       = 25
 DEFAULT_MAX_POINTS       = 150_000
@@ -45,6 +47,31 @@ TWO_PI = 2 * np.pi
 # Range filter: discard points closer than MIN_RANGE or farther than MAX_RANGE
 MIN_RANGE = 0.3   # metres — VLP-16 blind zone
 MAX_RANGE = 100.0
+
+
+def gravity_rotation(g_vec: np.ndarray) -> np.ndarray:
+    """Return 3×3 rotation matrix that maps g_vec (sensor 'up') to world Y (0,1,0).
+    Output is in WebGL convention: Y = up.
+    """
+    g = g_vec / (np.linalg.norm(g_vec) + 1e-12)
+    y = np.array([0.0, 1.0, 0.0])
+    v = np.cross(g, y)
+    s = np.linalg.norm(v)
+    c = float(np.dot(g, y))
+    if s < 1e-6:
+        return np.eye(3) if c > 0 else np.diag([1.0, -1.0, -1.0])
+    vx = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+    return np.eye(3) + vx + vx @ vx * ((1 - c) / (s * s))
+
+
+def quat_to_rot(q: np.ndarray) -> np.ndarray:
+    """Quaternion [x, y, z, w] → 3×3 rotation matrix (active, row-major)."""
+    x, y, z, w = q / np.linalg.norm(q)
+    return np.array([
+        [1-2*(y*y+z*z),   2*(x*y-z*w),   2*(x*z+y*w)],
+        [  2*(x*y+z*w), 1-2*(x*x+z*z),   2*(y*z-x*w)],
+        [  2*(x*z-y*w),   2*(y*z+x*w), 1-2*(x*x+y*y)],
+    ])
 
 
 def filter_points(xyz: np.ndarray) -> np.ndarray:
@@ -126,14 +153,29 @@ def build_bag_preview(bag_dir, max_clouds=DEFAULT_MAX_CLOUDS,
 
     state_t, state_a, angle_t, angle_a = [], [], [], []
     raw_clouds = []
+    imu_accels = []
+    tf_quats = []   # world→imu_link quaternions from /tf
     have_state = False
     state_tracker = _SpanTracker()
     angle_tracker = _SpanTracker()
     hard_cloud_cap = max(max_clouds * 20, 200)
 
+    # Discover which IMU topic is present in this bag
+    from mcap.reader import make_reader as _mcap_reader
+    with open(str(mcap_path), 'rb') as _f:
+        _topics_in_bag = {ch.topic for ch in _mcap_reader(_f).get_summary().channels.values()}
+    imu_topic = next((t for t in IMU_TOPICS if t in _topics_in_bag), None)
+
+    read_topics = [TOPIC_POINTS, TOPIC_JOINT_STATE, TOPIC_ANGLE]
+    if imu_topic:
+        read_topics.append(imu_topic)
+    has_tf = '/tf' in _topics_in_bag
+    if has_tf:
+        read_topics.append('/tf')
+
     for seen, m in enumerate(read_ros2_messages(
             str(mcap_path),
-            topics=[TOPIC_POINTS, TOPIC_JOINT_STATE, TOPIC_ANGLE]), 1):
+            topics=read_topics), 1):
         topic = m.channel.topic
         if topic == TOPIC_JOINT_STATE:
             have_state = True
@@ -147,6 +189,14 @@ def build_bag_preview(bag_dir, max_clouds=DEFAULT_MAX_CLOUDS,
             a = np.deg2rad(float(m.ros_msg.data))
             angle_a.append(a)
             angle_tracker.push(a)
+        elif imu_topic and topic == imu_topic:
+            a = m.ros_msg.linear_acceleration
+            imu_accels.append([a.x, a.y, a.z])
+        elif has_tf and topic == '/tf':
+            for tr in m.ros_msg.transforms:
+                if tr.header.frame_id == 'world' and tr.child_frame_id == 'imu_link':
+                    q = tr.transform.rotation
+                    tf_quats.append([q.x, q.y, q.z, q.w])
         elif topic == TOPIC_POINTS:
             h = m.ros_msg.header.stamp
             raw_clouds.append((h.sec * 1_000_000_000 + h.nanosec, m.ros_msg))
@@ -221,6 +271,38 @@ def build_bag_preview(bag_dir, max_clouds=DEFAULT_MAX_CLOUDS,
             'No usable point-cloud data in this bag (empty or unrecognised layout)')
 
     all_pts = np.concatenate(blocks, axis=0).astype(np.float32)
+
+    # Orientation alignment: rotate point cloud to world frame (Z up)
+    # Priority: /tf world→imu_link  >  IMU linear_acceleration fallback
+    # Z-up (ROS/TF convention) → Y-up (WebGL convention): worldZ→Y, worldY→-Z
+    _R_zup_to_yup = np.array([[1,0,0],[0,0,1],[0,-1,0]], dtype=np.float32)
+
+    grav_info = 'none'
+    if len(tf_quats) >= 1:
+        # Average quaternion: simple mean + normalize (valid for small spread)
+        q_arr = np.array(tf_quats)
+        # Flip quats that differ in sign from the first (same rotation, opposite sign)
+        q0 = q_arr[0]
+        signs = np.sign(q_arr @ q0)
+        q_arr *= signs[:, None]
+        q_mean = q_arr.mean(axis=0)
+        q_mean /= np.linalg.norm(q_mean)
+        # quat_to_rot gives imu_link→world(Z=up); combine with Z→Y swap for WebGL
+        R_tf = quat_to_rot(q_mean).astype(np.float32)
+        R = _R_zup_to_yup @ R_tf
+        all_pts = (all_pts @ R.T)
+        grav_info = f'/tf world->imu_link n={len(tf_quats)} q=[{q_mean[0]:.3f},{q_mean[1]:.3f},{q_mean[2]:.3f},{q_mean[3]:.3f}]'
+    elif len(imu_accels) >= 3:
+        # Fallback: estimate orientation from static gravity vector
+        g_mean = np.mean(imu_accels, axis=0)
+        g_norm = np.linalg.norm(g_mean)
+        if 0.5 < g_norm < 2.0:
+            R = gravity_rotation(g_mean).astype(np.float32)
+            all_pts = (all_pts @ R.T)
+            tilt_deg = round(float(np.degrees(np.arccos(
+                np.clip(np.dot(g_mean / g_norm, [0, 1, 0]), -1, 1)))), 2)
+            grav_info = f'{imu_topic} accel fallback n={len(imu_accels)} tilt={tilt_deg}deg'
+
     return {
         'buf':                 all_pts.tobytes(),
         'points':              int(len(all_pts)),
@@ -230,4 +312,5 @@ def build_bag_preview(bag_dir, max_clouds=DEFAULT_MAX_CLOUDS,
         'encoder_source':      enc_src,
         'rotations_captured':  round(rotations_captured, 2),
         'compute_s':           round(time.monotonic() - t0, 2),
+        'gravity_source':      grav_info,
     }
