@@ -14,7 +14,7 @@ if [[ "$TARGET" == "hmi" || "$TARGET" == "all" ]]; then
   info "rsync orangepi/hmi/"
   rsync -av --delete --exclude='__pycache__' \
     "$ROOT/orangepi/hmi/" "$PI:~/hmi/"
-  rsync -av "$ROOT/shared/offline_deskew.py" "$PI:~/hmi/offline_deskew.py"
+  rsync -avL "$ROOT/shared/offline_deskew.py" "$PI:~/hmi/offline_deskew.py"
   ok "hmi synced"
 fi
 

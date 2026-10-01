@@ -4,7 +4,7 @@
 # Or from Mac:   ssh openclaw@192.168.1.108 "bash -s" < scripts/bootstrap.sh
 set -euo pipefail
 
-REPO_URL="https://github.com/taipov/3dlidar"   # TODO: update with actual remote
+REPO_URL="https://github.com/timurey/3dlidar"
 REPO_DIR="$HOME/3dlidar"
 ROS2_WS="$HOME/ros2_ws"
 IMU_WS="$HOME/ros_imu_ws"
@@ -57,10 +57,11 @@ ok "pip packages installed"
 info "[3/9] Clone this repo"
 
 if [[ ! -d "$REPO_DIR/.git" ]]; then
-  git clone "$REPO_URL" "$REPO_DIR"
+  git clone --recurse-submodules "$REPO_URL" "$REPO_DIR"
   ok "repo cloned → $REPO_DIR"
 else
   git -C "$REPO_DIR" pull --ff-only
+  git -C "$REPO_DIR" submodule update --init desktop
   ok "repo updated"
 fi
 
@@ -139,7 +140,7 @@ info "[7/9] HMI files"
 
 mkdir -p "$HOME/hmi/templates"
 rsync -a "$REPO_DIR/orangepi/hmi/" "$HOME/hmi/"
-rsync -a "$REPO_DIR/shared/offline_deskew.py" "$HOME/hmi/"
+rsync -aL "$REPO_DIR/shared/offline_deskew.py" "$HOME/hmi/"
 chmod +x "$HOME/hmi/start.sh"
 
 mkdir -p "$HOME/bags" "$HOME/bags_trash" "$HOME/scripts"

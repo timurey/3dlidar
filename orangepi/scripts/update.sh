@@ -25,6 +25,8 @@ log "git pull..."
 git fetch origin
 BEFORE=$(git rev-parse HEAD)
 git pull --ff-only
+# shared/offline_deskew.py is a symlink into the desktop/ submodule
+git submodule update --init desktop
 AFTER=$(git rev-parse HEAD)
 
 if [[ "$BEFORE" == "$AFTER" ]]; then
@@ -43,7 +45,7 @@ REBUILD_ROS=false
 REDEPLOY_HMI=false
 
 echo "$CHANGED" | grep -q "^orangepi/ros2/" && REBUILD_ROS=true
-echo "$CHANGED" | grep -qE "^orangepi/hmi/|^shared/" && REDEPLOY_HMI=true
+echo "$CHANGED" | grep -qE "^orangepi/hmi/|^shared/|^desktop$" && REDEPLOY_HMI=true
 
 if [[ "$DRY" == "--dry-run" ]]; then
   log "DRY RUN — rebuild_ros=$REBUILD_ROS  redeploy_hmi=$REDEPLOY_HMI"
@@ -67,7 +69,7 @@ if $REDEPLOY_HMI; then
   log "Redeploying HMI..."
   rsync -a --delete --exclude='__pycache__' \
     "$REPO_DIR/orangepi/hmi/" "$HOME/hmi/"
-  rsync -a "$REPO_DIR/shared/offline_deskew.py" "$HOME/hmi/"
+  rsync -aL "$REPO_DIR/shared/offline_deskew.py" "$HOME/hmi/"
   sudo systemctl restart hmi
   log "HMI redeployed and restarted"
 fi
