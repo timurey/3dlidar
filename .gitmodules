@@ -1,3 +1,9 @@
 [submodule "desktop"]
 	path = desktop
 	url = https://github.com/timurey/pulse-desktop.git
+[submodule "firmware/cyd_hmi"]
+	path = firmware/cyd_hmi
+	url = https://github.com/timurey/SLAM_Data_Recorder_HMI.git
+[submodule "firmware/spin_controller"]
+	path = firmware/spin_controller
+	url = https://github.com/timurey/vlp16-spin-controller.git
