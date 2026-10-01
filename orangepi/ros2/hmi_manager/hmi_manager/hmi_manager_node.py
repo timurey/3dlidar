@@ -104,6 +104,7 @@ class HmiManagerNode(Node):
                     line, buf = buf.split('\n', 1)
                     line = line.strip()
                     if line.startswith('{'):
+                        self.get_logger().info(f'CYD RX: {line}')
                         self._handle_cmd(line)
             except serial.SerialException as e:
                 self.get_logger().error(f'CYD read error: {e}')
@@ -121,6 +122,10 @@ class HmiManagerNode(Node):
             self._stop_recording()
         elif cmd == 'shutdown':
             self._shutdown()
+        elif cmd == 'wifi_ap':
+            self._wifi_mode('ap')
+        elif cmd == 'wifi_client':
+            self._wifi_mode('client')
 
     # ── Recording — delegated to hmi_bridge ──────────────────────────────────
 
@@ -142,11 +147,34 @@ class HmiManagerNode(Node):
         import subprocess
         subprocess.Popen('echo openclaw | sudo -S shutdown -h now', shell=True)
 
+    def _wifi_mode(self, mode: str):
+        import urllib.request
+        endpoint = 'ap' if mode == 'ap' else 'client'
+        url = f'http://localhost:3000/api/wifi/{endpoint}'
+        self.get_logger().info(f'WiFi mode request: {mode}')
+        try:
+            req = urllib.request.Request(url, data=b'', method='POST')
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                self.get_logger().info(f'WiFi {mode} response: {resp.status}')
+        except Exception as e:
+            self.get_logger().error(f'wifi_{mode} failed: {e}')
+
     # ── WiFi helpers ──────────────────────────────────────────────────────────
 
     def _refresh_wifi(self):
         """Refresh cached WiFi status via nmcli (called at most every 10 s)."""
         try:
+            wifi_dev = ''
+            rd = subprocess.run(
+                ['nmcli', '-t', '-f', 'DEVICE,TYPE,STATE', 'dev', 'status'],
+                capture_output=True, text=True, timeout=5
+            )
+            for line in rd.stdout.splitlines():
+                parts = line.split(':')
+                if len(parts) >= 3 and parts[1] == 'wifi' and parts[2] in ('connected', 'activated'):
+                    wifi_dev = parts[0]
+                    break
+
             r = subprocess.run(
                 ['nmcli', '-t', '-f', 'NAME,TYPE', 'con', 'show', '--active'],
                 capture_output=True, text=True, timeout=5
@@ -160,15 +188,16 @@ class HmiManagerNode(Node):
             self._wifi_mode = mode
 
             ip = ''
-            r2 = subprocess.run(
-                ['nmcli', '-t', '-f', 'IP4.ADDRESS', 'dev', 'show', 'wlan0'],
-                capture_output=True, text=True, timeout=5
-            )
-            for line in r2.stdout.splitlines():
-                parts = line.split(':')
-                if len(parts) >= 2 and parts[0].startswith('IP4.ADDRESS') and '/' in parts[-1]:
-                    ip = parts[-1].split('/')[0]
-                    break
+            if wifi_dev:
+                r2 = subprocess.run(
+                    ['nmcli', '-t', '-f', 'IP4.ADDRESS', 'dev', 'show', wifi_dev],
+                    capture_output=True, text=True, timeout=5
+                )
+                for line in r2.stdout.splitlines():
+                    parts = line.split(':')
+                    if len(parts) >= 2 and parts[0].startswith('IP4.ADDRESS') and '/' in parts[-1]:
+                        ip = parts[-1].split('/')[0]
+                        break
             self._wifi_ip = ip
         except Exception:
             pass
@@ -195,6 +224,7 @@ class HmiManagerNode(Node):
                 'lidar_ok':        b.get('lidar_raw_ok', False),
                 'imu_ok':          b.get('imu_ok', False),
                 'recording':       b.get('recording', False),
+                'laser_warming':   b.get('laser_warming', False),
                 'disk_gb':         b.get('disk_gb', 0.0),
                 'rec_duration':    b.get('rec_duration', 0),
                 'bag_name':        b.get('bag_name', ''),
@@ -206,8 +236,8 @@ class HmiManagerNode(Node):
                 'sensors_running': False,
                 'lidar_hz': 0.0, 'imu_hz': 0.0,
                 'lidar_ok': False, 'imu_ok': False,
-                'recording': False, 'disk_gb': 0.0,
-                'rec_duration': 0, 'bag_name': '',
+                'recording': False, 'laser_warming': False,
+                'disk_gb': 0.0, 'rec_duration': 0, 'bag_name': '',
                 'wifi_ip':   wifi_ip,
                 'wifi_mode': wifi_mode,
             }

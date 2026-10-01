@@ -447,7 +447,7 @@ class BagRecorder:
             if ros_coord is None:
                 return False, 'ROS coordinator not initialized'
             resp = ros_coord.call(
-                'start_record', timeout=15.0,  # motor start + 2s wait + bag open
+                'start_record', timeout=80.0,  # reset(45s) + spin-up + wait + bag open
                 mode=mode, name=proposed_name
             )
             if resp is None:
@@ -580,6 +580,15 @@ def get_wifi_status() -> dict:
     """Return current WiFi mode, SSID, IP, signal, and saved connection names."""
     mode, ssid, ip, signal, internet = 'disconnected', None, None, None, False
 
+    wifi_dev = None
+    ok, out = _nmcli('-t', '-f', 'DEVICE,TYPE,STATE', 'dev', 'status')
+    if ok:
+        for line in out.splitlines():
+            f = _nmcli_fields(line)
+            if len(f) >= 3 and f[1] == 'wifi' and f[2] in ('connected', 'activated'):
+                wifi_dev = f[0]
+                break
+
     ok, out = _nmcli('-t', '-f', 'NAME,TYPE', 'con', 'show', '--active')
     if ok:
         for line in out.splitlines():
@@ -588,8 +597,8 @@ def get_wifi_status() -> dict:
                 mode = 'ap' if f[0] == _HOTSPOT_CON else 'client'
                 break
 
-    if mode in ('client', 'ap'):
-        ok2, ip_out = _nmcli('-t', '-f', 'IP4.ADDRESS', 'dev', 'show', 'wlan0')
+    if mode in ('client', 'ap') and wifi_dev:
+        ok2, ip_out = _nmcli('-t', '-f', 'IP4.ADDRESS', 'dev', 'show', wifi_dev)
         if ok2:
             for line in ip_out.splitlines():
                 f = _nmcli_fields(line)
@@ -748,6 +757,7 @@ def status():
     is_recording = bridge.get('recording', recorder.recording) if bridge else recorder.recording
     rec_duration = bridge.get('rec_duration', 0) if is_recording else 0
     bag_name = bridge.get('bag_name') or recorder.bag_name
+    laser_warming = bridge.get('laser_warming', False) if bridge else False
     return jsonify({
         'hz':               hz,
         'encoder_angle':    angle_mon.get(),
@@ -762,6 +772,7 @@ def status():
         'pending_mode':     recorder.pending_mode,
         'topic_modes':      TOPIC_MODES,
         'lidar_spindle_rpm': get_lidar_spindle_rpm(),
+        'laser_warming':    laser_warming,
     })
 
 
@@ -1333,6 +1344,22 @@ def api_wifi_ap():
     if ok:
         return jsonify({'ok': True, 'ip': '10.42.0.1', 'msg': 'AP mode active'})
     return jsonify({'ok': False, 'msg': out}), 500
+
+
+@app.route('/api/wifi/client', methods=['POST'])
+def api_wifi_client():
+    """Switch from AP mode back to client: bring down hotspot, reconnect saved wifi."""
+    _nmcli('con', 'down', _HOTSPOT_CON, timeout=5)
+    ok, out = _nmcli('-t', '-f', 'NAME,TYPE', 'con', 'show', timeout=5)
+    if ok:
+        for line in out.splitlines():
+            f = _nmcli_fields(line)
+            if (len(f) >= 2 and f[1] in ('802-11-wireless', 'wifi')
+                    and f[0] != _HOTSPOT_CON):
+                ok2, _ = _nmcli('con', 'up', f[0], timeout=15)
+                if ok2:
+                    return jsonify({'ok': True, 'msg': f'Connected to {f[0]}'})
+    return jsonify({'ok': False, 'msg': 'No saved wifi network found'})
 
 
 @app.route('/api/wifi/network/<path:name>', methods=['DELETE'])
